@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:zygc_flutter_prototype/src/widgets/section_card.dart';
 import 'package:zygc_flutter_prototype/src/widgets/stat_chip.dart';
 import 'package:zygc_flutter_prototype/src/widgets/tag_chip.dart';
+import 'analysis_page.dart';
 
 class DashboardPage extends StatelessWidget {
   const DashboardPage({
@@ -248,22 +249,29 @@ class _QuickActions extends StatelessWidget {
         _QuickActionButton(
           icon: Icons.edit_note_rounded,
           label: '完善高考信息',
+          subtitle: '录入成绩、选科和偏好',
           tone: _QuickActionTone.primary,
           onTap: onGoInfo,
         ),
         const SizedBox(height: 12),
         _QuickActionButton(
           icon: Icons.track_changes_rounded,
-          label: '查看志愿推荐',
+          label: '生成志愿推荐',
+          subtitle: '基于您的信息智能匹配院校',
           tone: _QuickActionTone.neutral,
           onTap: onGoRecommend,
         ),
         const SizedBox(height: 12),
         _QuickActionButton(
-          icon: Icons.person_rounded,
-          label: '进入个人中心',
+          icon: Icons.analytics_rounded,
+          label: '查看成绩分析',
+          subtitle: '了解单科强弱和提升路线',
           tone: _QuickActionTone.outline,
-          onTap: onGoProfile,
+          onTap: () {
+            Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const AnalysisPage()),
+            );
+          },
         ),
       ],
     );
@@ -276,12 +284,14 @@ class _QuickActionButton extends StatelessWidget {
   const _QuickActionButton({
     required this.icon,
     required this.label,
+    this.subtitle,
     required this.tone,
     required this.onTap,
   });
 
   final IconData icon;
   final String label;
+  final String? subtitle;
   final _QuickActionTone tone;
   final VoidCallback onTap;
 
@@ -318,20 +328,31 @@ class _QuickActionButton extends StatelessWidget {
             padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
             child: Row(
               children: [
-                Icon(
-                  icon,
-                  size: 24,
-                  color: foreground,
-                ),
+                Icon(icon, size: 24, color: foreground),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: Text(
-                    label,
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                      color: foreground,
-                    ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        label,
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: foreground,
+                        ),
+                      ),
+                      if (subtitle != null) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          subtitle!,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: foreground.withOpacity(0.7),
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                 ),
                 Icon(

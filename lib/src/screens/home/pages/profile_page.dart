@@ -2,7 +2,10 @@ import 'package:flutter/material.dart';
 
 import 'package:zygc_flutter_prototype/src/models/auth_models.dart';
 import 'package:zygc_flutter_prototype/src/widgets/section_card.dart';
-import 'package:zygc_flutter_prototype/src/widgets/tag_chip.dart';
+import 'profile_edit_page.dart';
+import 'profile_weight_page.dart';
+import 'profile_share_page.dart';
+import 'profile_notification_page.dart';
 
 class ProfilePage extends StatelessWidget {
   const ProfilePage({
@@ -29,99 +32,235 @@ class ProfilePage extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SectionCard(
-            title: '账户信息',
-            subtitle: '高考志愿填报系统账号',
-            trailing: FilledButton.tonal(onPressed: onEditProfile, child: const Text('修改信息')),
-            child: Column(
-              children: [
-                _ProfileRow(label: '姓名', value: user.username.isNotEmpty ? user.username : '未设置'),
-                const SizedBox(height: 12),
-                _ProfileRow(label: '账号', value: user.userId),
-                const SizedBox(height: 12),
-                _ProfileRow(label: '所在省份', value: user.province ?? '未填写'),
-                const SizedBox(height: 12),
-                _ProfileRow(label: '毕业高中', value: user.schoolName ?? '未填写'),
+          // 个人名片区域
+          Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [Color(0xFF2C5BF0), Color(0xFF5B7FFF)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(28),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x402C5BF0),
+                  blurRadius: 32,
+                  offset: Offset(0, 16),
+                ),
               ],
             ),
-          ),
-          const SizedBox(height: 20),
-          SectionCard(
-            title: '偏好权重',
-            subtitle: '驱动推荐策略的权重配置',
-            trailing: FilledButton.tonal(onPressed: onAdjustWeights, child: const Text('调整权重')),
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _WeightRow(label: '目标地区', percent: 40, description: '长三角（上海 / 杭州）'),
-                const SizedBox(height: 12),
-                _WeightRow(label: '院校层次', percent: 35, description: '985 优先，兼顾双一流'),
-                const SizedBox(height: 12),
-                _WeightRow(label: '专业方向', percent: 25, description: '教育学 / 人文社科'),
-              ],
-            ),
-          ),
-          const SizedBox(height: 20),
-          SectionCard(
-            title: '共享设置',
-            subtitle: '与家长、老师协同备考',
-            trailing: FilledButton.tonal(onPressed: onManageShare, child: const Text('管理权限')),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('已共享给：', style: theme.textTheme.labelMedium),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: const [
-                    TagChip(label: '家长 · 李女士'),
-                    TagChip(label: '老师 · 张老师'),
+                Row(
+                  children: [
+                    // 头像
+                    Container(
+                      width: 72,
+                      height: 72,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        shape: BoxShape.circle,
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Color(0x33000000),
+                            blurRadius: 16,
+                            offset: Offset(0, 8),
+                          ),
+                        ],
+                      ),
+                      child: Center(
+                        child: Text(
+                          user.username.isNotEmpty 
+                            ? user.username[0].toUpperCase() 
+                            : '?',
+                          style: const TextStyle(
+                            fontSize: 32,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF2C5BF0),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    // 用户信息
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            user.username.isNotEmpty ? user.username : '未设置',
+                            style: const TextStyle(
+                              fontSize: 24,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.2),
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            child: Text(
+                              'ID: ${user.userId}',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ],
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 20),
+                // 快速信息展示
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: const Color(0x1400B8D4),
-                    borderRadius: BorderRadius.circular(18),
+                    color: Colors.white.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(20),
                   ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  child: Row(
                     children: [
-                      Text('共享链接', style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
-                      const SizedBox(height: 8),
-                      SelectableText('https://share.zhiyuan.com/abc123', style: theme.textTheme.bodyMedium),
-                      const SizedBox(height: 4),
-                      Text('有效期：7 天', style: theme.textTheme.bodySmall?.copyWith(color: const Color(0xFF4B5769))),
+                      Expanded(
+                        child: _QuickInfoItem(
+                          icon: Icons.place_rounded,
+                          label: user.province ?? '未填写',
+                        ),
+                      ),
+                      Container(
+                        width: 1,
+                        height: 32,
+                        color: Colors.white.withOpacity(0.3),
+                      ),
+                      Expanded(
+                        child: _QuickInfoItem(
+                          icon: Icons.school_rounded,
+                          label: user.schoolName ?? '未填写',
+                        ),
+                      ),
                     ],
                   ),
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 20),
-          SectionCard(
-            title: '通知提醒',
-            subtitle: '保持信息同步',
-            child: Column(
-              children: const [
-                _ToggleRow(label: '热度预警通知', value: true),
-                _ToggleRow(label: '成绩更新提醒', value: true),
-                _ToggleRow(label: '推荐院校变化通知', value: true),
-                _ToggleRow(label: '协作者评论通知', value: false),
-              ],
+          const SizedBox(height: 24),
+          
+          // 功能入口列表
+          Text(
+            '功能中心',
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w700,
+              color: const Color(0xFF1F2430),
             ),
           ),
-          const SizedBox(height: 20),
-          FilledButton.icon(
-            onPressed: onSignOut,
-            icon: const Icon(Icons.logout_rounded),
-            label: const Text('退出登录'),
-            style: FilledButton.styleFrom(
-              backgroundColor: const Color(0xFFF04F52),
-              foregroundColor: Colors.white,
-              minimumSize: const Size.fromHeight(52),
+          const SizedBox(height: 12),
+          
+          _FunctionTile(
+            icon: Icons.person_outline_rounded,
+            title: '账户信息',
+            subtitle: '查看和修改个人资料',
+            color: const Color(0xFF2C5BF0),
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => ProfileEditPage(user: user),
+                ),
+              );
+            },
+          ),
+          const SizedBox(height: 12),
+          
+          _FunctionTile(
+            icon: Icons.tune_rounded,
+            title: '偏好权重',
+            subtitle: '调整推荐算法权重配置',
+            color: const Color(0xFFFF9500),
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const ProfileWeightPage(),
+                ),
+              );
+            },
+          ),
+          const SizedBox(height: 12),
+          
+          _FunctionTile(
+            icon: Icons.share_rounded,
+            title: '共享设置',
+            subtitle: '管理与家长、老师的协同',
+            color: const Color(0xFF21B573),
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const ProfileSharePage(),
+                ),
+              );
+            },
+          ),
+          const SizedBox(height: 12),
+          
+          _FunctionTile(
+            icon: Icons.notifications_outlined,
+            title: '通知提醒',
+            subtitle: '管理各类消息推送',
+            color: const Color(0xFF00B8D4),
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const ProfileNotificationPage(),
+                ),
+              );
+            },
+          ),
+          const SizedBox(height: 24),
+          
+          // 退出登录按钮
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: () {
+                showDialog<void>(
+                  context: context,
+                  builder: (dialogContext) => AlertDialog(
+                    title: const Text('确认退出'),
+                    content: const Text('确定要退出登录吗？'),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.of(dialogContext).pop(),
+                        child: const Text('取消'),
+                      ),
+                      FilledButton(
+                        onPressed: () {
+                          Navigator.of(dialogContext).pop();
+                          onSignOut();
+                        },
+                        style: FilledButton.styleFrom(
+                          backgroundColor: const Color(0xFFF04F52),
+                        ),
+                        child: const Text('退出'),
+                      ),
+                    ],
+                  ),
+                );
+              },
+              icon: const Icon(Icons.logout_rounded),
+              label: const Text('退出登录'),
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFFF04F52),
+                foregroundColor: Colors.white,
+                minimumSize: const Size.fromHeight(52),
+              ),
             ),
           ),
         ],
@@ -130,69 +269,110 @@ class ProfilePage extends StatelessWidget {
   }
 }
 
-class _ProfileRow extends StatelessWidget {
-  const _ProfileRow({required this.label, required this.value});
+class _QuickInfoItem extends StatelessWidget {
+  const _QuickInfoItem({
+    required this.icon,
+    required this.label,
+  });
 
+  final IconData icon;
   final String label;
-  final String value;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    return Column(
       children: [
-        Text(label, style: theme.textTheme.bodyMedium),
-        Text(value, style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
+        Icon(icon, size: 20, color: Colors.white),
+        const SizedBox(height: 6),
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            color: Colors.white,
+          ),
+          textAlign: TextAlign.center,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
       ],
     );
   }
 }
 
-class _WeightRow extends StatelessWidget {
-  const _WeightRow({required this.label, required this.percent, required this.description});
+class _FunctionTile extends StatelessWidget {
+  const _FunctionTile({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.color,
+    required this.onTap,
+  });
 
-  final String label;
-  final int percent;
-  final String description;
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final Color color;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(20),
+      elevation: 0,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(20),
+        child: Container(
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            border: Border.all(color: const Color(0xFFE8ECF4)),
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Row(
             children: [
-              Text(label, style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
-              const SizedBox(height: 6),
-              Text(description, style: theme.textTheme.bodySmall?.copyWith(color: const Color(0xFF4B5769))),
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: color.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(icon, color: color, size: 24),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      subtitle,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: const Color(0xFF7C8698),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(
+                Icons.arrow_forward_ios_rounded,
+                size: 16,
+                color: Color(0xFF7C8698),
+              ),
             ],
           ),
         ),
-        Text('${percent}%', style: theme.textTheme.titleMedium?.copyWith(color: theme.colorScheme.primary, fontWeight: FontWeight.w700)),
-      ],
-    );
-  }
-}
-
-class _ToggleRow extends StatelessWidget {
-  const _ToggleRow({required this.label, required this.value});
-
-  final String label;
-  final bool value;
-
-  @override
-  Widget build(BuildContext context) {
-    return SwitchListTile.adaptive(
-      contentPadding: EdgeInsets.zero,
-      title: Text(label),
-      value: value,
-      onChanged: (_) {},
+      ),
     );
   }
 }

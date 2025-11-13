@@ -39,7 +39,7 @@ flutter_app/
 │       │       │   ├── college_page.dart       # 院校页面
 │       │       │   ├── dashboard_page.dart     # 仪表盘页面
 │       │       │   ├── heat_page.dart          # 热度页面
-│       │       │   ├── info_page.dart          # 信息页面
+│       │       │   ├── info_page.dart          # 高考页面
 │       │       │   ├── profile_page.dart       # 个人资料页面
 │       │       │   └── recommend_page.dart     # 推荐页面
 │       │       └── widgets/
@@ -103,5 +103,19 @@ flutter run -d android
 - 个人信息页调用 `/student-score/mine` 展示最新成绩，院校页支持省份筛选与院校详情查看。
 - 推荐、院校等页面完成导航互通和卡片样式优化，完善按钮交互。
 - 后端开放 `/colleges` 查询能力
+
+
+# 11-13
+
+## 项目更新说明
+- 完善高考页面（info_page.dart）新增省份选择功能，支持新旧高考
+- 更改院校页面（college_page.dart）/ 我的页面（profile_page.dart）布局
+- 新增收藏院校页面（favorite_colleges_page.dart），实现院校收藏功能
+- 优化推荐页面（recommend_page.dart）交互体验
+
+## 交互问题
+
+-  [] 院校页面（collegeg_page.dart）有一个收藏功能，对应的数据库表现在是否有收藏字段
+
 
 

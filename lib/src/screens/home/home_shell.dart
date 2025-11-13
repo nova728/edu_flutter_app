@@ -8,6 +8,7 @@ import 'pages/dashboard_page.dart';
 import 'pages/info_page.dart';
 import 'pages/profile_page.dart';
 import 'pages/recommend_page.dart';
+import 'pages/favorite_colleges_page.dart'; 
 
 class HomeShell extends StatefulWidget {
   const HomeShell({required this.session, required this.onSignOut, super.key});
@@ -33,16 +34,14 @@ class _HomeShellState extends State<HomeShell> {
         builder: (context) => InfoPage(
           onEditProfile: () => _navigateTo(4),
           onViewPreferences: () => _navigateTo(1),
-          onViewAnalysis: () => Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const AnalysisPage()),
-          ),
+          onViewAnalysis: () => _navigateTo(0), // 改为页内跳转到分析区域
         ),
       ),
       _HomeDestination(
         label: '推荐',
         icon: Icons.track_changes_rounded,
         builder: (context) => RecommendPage(
-          onViewCollegeList: () => _navigateTo(3),
+          onViewCollege: (collegeCode) => _navigateTo(3), // 传递院校代码
         ),
       ),
       _HomeDestination(
@@ -53,9 +52,7 @@ class _HomeShellState extends State<HomeShell> {
           onGoRecommend: () => _navigateTo(1),
           onGoProfile: () => _navigateTo(4),
           onGoCollege: () => _navigateTo(3),
-          onGoAnalysis: () => Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const AnalysisPage()),
-          ),
+          onGoAnalysis: () => _navigateTo(0), 
         ),
       ),
       _HomeDestination(
@@ -131,10 +128,10 @@ class _HomeShellState extends State<HomeShell> {
                   ),
                 ],
               ),
-              const Positioned(
+              Positioned(
                 right: 24,
-                bottom: 92,
-                child: _FloatingAction(),
+                bottom: 108, // 从 92 调整到 108，向上移动 16px
+                child: _FloatingAction(currentIndex: _index, onNavigate: _navigateTo),
               ),
               Positioned(
                 left: 0,
@@ -167,24 +164,161 @@ class _HomeDestination {
 }
 
 class _FloatingAction extends StatelessWidget {
-  const _FloatingAction();
+  const _FloatingAction({required this.currentIndex, required this.onNavigate});
+
+  final int currentIndex;
+  final ValueChanged<int> onNavigate;
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () {},
-      child: Container(
-        width: 56,
-        height: 56,
-        decoration: BoxDecoration(
-          color: const Color(0xFF2C5BF0),
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: const [
-            BoxShadow(color: Color(0x5A2C5BF0), blurRadius: 32, offset: Offset(0, 16)),
-          ],
+    // 根据当前页面显示不同的浮动操作
+    final String tooltip;
+    final IconData icon;
+    final VoidCallback action;
+
+    switch (currentIndex) {
+      case 0: // 高考信息页
+        tooltip = '快速录入成绩';
+        icon = Icons.add_chart_rounded;
+        action = () => _showScoreInputDialog(context);
+        break;
+      case 1: // 推荐页
+        tooltip = '生成推荐方案';
+        icon = Icons.auto_awesome_rounded;
+        action = () => _generateRecommendations(context);
+        break;
+      case 3: // 收藏功能
+        tooltip = '我的收藏';
+        icon = Icons.favorite_rounded;
+        action = () => _openFavoritesPage(context);
+        break;
+      default: // 首页、我的页
+        return const SizedBox.shrink();
+    }
+
+    return Tooltip(
+      message: tooltip,
+      preferBelow: false,
+      verticalOffset: 60,
+      decoration: BoxDecoration(
+        color: const Color(0xFF1F2430),
+        borderRadius: BorderRadius.circular(8),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x40000000),
+            blurRadius: 8,
+            offset: Offset(0, 2),
+          ),
+        ],
+      ),
+      textStyle: const TextStyle(
+        fontSize: 14,
+        fontWeight: FontWeight.w600,
+        color: Colors.white,
+      ),
+      waitDuration: const Duration(milliseconds: 500),
+      child: GestureDetector(
+        onTap: action,
+        child: Container(
+          width: 56,
+          height: 56,
+          decoration: BoxDecoration(
+            color: const Color(0xFF2C5BF0),
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x5A2C5BF0),
+                blurRadius: 32,
+                offset: Offset(0, 16),
+              ),
+            ],
+          ),
+          alignment: Alignment.center,
+          child: Icon(icon, color: Colors.white, size: 30),
         ),
-        alignment: Alignment.center,
-        child: const Icon(Icons.add_rounded, color: Colors.white, size: 30),
+      ),
+    );
+  }
+
+  void _showScoreInputDialog(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => Padding(
+        padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('快速录入成绩', style: Theme.of(context).textTheme.titleLarge),
+              const SizedBox(height: 16),
+              TextField(
+                decoration: const InputDecoration(labelText: '总分', hintText: '请输入总分'),
+                keyboardType: TextInputType.number,
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                decoration: const InputDecoration(labelText: '省内排名', hintText: '请输入排名'),
+                keyboardType: TextInputType.number,
+              ),
+              const SizedBox(height: 20),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      child: const Text('取消'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: FilledButton(
+                      onPressed: () {
+                        Navigator.of(context).pop();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('成绩录入成功')),
+                        );
+                      },
+                      child: const Text('保存'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _generateRecommendations(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('生成推荐方案'),
+        content: const Text('系统将根据您的成绩和偏好生成个性化推荐方案，是否继续?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('取消')),
+          FilledButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('正在生成推荐方案...')),
+              );
+            },
+            child: const Text('确定'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _openFavoritesPage(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => const FavoriteCollegesPage(),
       ),
     );
   }

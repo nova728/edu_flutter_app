@@ -12,6 +12,11 @@ class ApiClient {
   final http.Client _httpClient;
   final String _baseUrl;
 
+  // 添加默认请求头
+  static const Map<String, String> _headers = {
+    'Content-Type': 'application/json; charset=utf-8',
+  };
+
   Future<Map<String, dynamic>> post(
     String path, {
     Map<String, String>? headers,
@@ -38,9 +43,23 @@ class ApiClient {
     return _handleResponse(response);
   }
 
+  Future<Map<String, dynamic>> delete(
+    String path, {
+    Map<String, String>? headers,
+    Map<String, String>? query,
+  }) async {
+    final uri = Uri.parse('$_baseUrl$path').replace(
+      queryParameters: query,
+    );
+    final mergedHeaders = {..._headers, if (headers != null) ...headers};
+
+    final response = await _httpClient.delete(uri, headers: mergedHeaders);
+    return _handleResponse(response);
+  }
+
   Map<String, String> _mergeHeaders(Map<String, String>? headers) {
     return <String, String>{
-      'Content-Type': 'application/json; charset=utf-8',
+      ..._headers,
       if (headers != null) ...headers,
     };
   }
