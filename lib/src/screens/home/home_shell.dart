@@ -88,7 +88,7 @@ class _HomeShellState extends State<HomeShell> {
 
   void _navigateTo(int value) {
     if (_index == value) return;
-    setState(() => _index = value);
+    setState(() => _index = value); // 通过修改索引切换页面,不使用路由栈
   }
 
   void _onDestinationSelected(int value) => _navigateTo(value);

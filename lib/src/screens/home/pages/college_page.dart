@@ -156,12 +156,20 @@ class _CollegeLibraryTabState extends State<_CollegeLibraryTab> {
       
       final keyword = _searchController.text.trim();
       if (keyword.isNotEmpty) query['q'] = keyword;
-      if (_selectedProvince != null) query['province'] = _selectedProvince!;
+      
+      // 修复省份筛选：规范化省份名称
+      if (_selectedProvince != null) {
+        // 移除省份名称中的后缀（省、市、自治区等）
+        final normalizedProvince = _normalizeProvince(_selectedProvince!);
+        query['province'] = normalizedProvince;
+      }
+      
       if (_only985) query['is985'] = '1';
 
       final response = await _client.get('/colleges', query: query);
       var rows = response['data'] as List? ?? const [];
       
+      // 如果后端返回的数据为空且有省份筛选，尝试客户端过滤
       if (rows.isEmpty && query.containsKey('province')) {
         final fallbackQuery = Map<String, String>.from(query)..remove('province');
         final fallbackResp = await _client.get('/colleges', query: fallbackQuery);
@@ -192,20 +200,38 @@ class _CollegeLibraryTabState extends State<_CollegeLibraryTab> {
     }
   }
 
+  /// 规范化省份名称：移除后缀（省、市、自治区等）
   String _normalizeProvince(String input) {
     var result = input.trim();
-    const suffixes = ['特别行政区', '维吾尔自治区', '壮族自治区', '回族自治区', '自治区', '省', '市'];
+    
+    // 定义所有可能的后缀
+    const suffixes = [
+      '特别行政区',
+      '维吾尔自治区',
+      '壮族自治区',
+      '回族自治区',
+      '自治区',
+      '省',
+      '市',
+    ];
+    
+    // 移除匹配的后缀
     for (final suffix in suffixes) {
       if (result.endsWith(suffix)) {
         result = result.substring(0, result.length - suffix.length);
         break;
       }
     }
+    
     return result;
   }
 
   Future<void> _openCollegeDetail(CollegeSummary summary) async {
     try {
+      // 在打开弹窗前获取 token
+      final scope = AuthScope.of(context);
+      final token = scope.session.token;
+      
       final detail = await _client.get('/colleges/${summary.collegeCode}');
       if (!mounted) return;
       final data = detail['data'] as Map<String, dynamic>? ?? {};
@@ -213,77 +239,12 @@ class _CollegeLibraryTabState extends State<_CollegeLibraryTab> {
       showModalBottomSheet(
         context: context,
         isScrollControlled: true,
-        builder: (context) => DraggableScrollableSheet(
-          initialChildSize: 0.7,
-          minChildSize: 0.5,
-          maxChildSize: 0.95,
-          builder: (context, scrollController) => Container(
-            padding: const EdgeInsets.all(24),
-            child: ListView(
-              controller: scrollController,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Expanded(
-                      child: Text(
-                        summary.collegeName,
-                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.close),
-                      onPressed: () => Navigator.of(context).pop(),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 20),
-                _DetailRow(label: '院校代码', value: summary.collegeCode.toString()),
-                const SizedBox(height: 12),
-                _DetailRow(label: '所在省份', value: data['PROVINCE']?.toString() ?? '-'),
-                const SizedBox(height: 12),
-                _DetailRow(label: '所在城市', value: data['CITY_NAME']?.toString() ?? '-'),
-                const SizedBox(height: 12),
-                _DetailRow(label: '院校类型', value: data['COLLEGE_TYPE']?.toString() ?? '-'),
-                const SizedBox(height: 12),
-                _DetailRow(
-                  label: '院校标签',
-                  value: [
-                    if (summary.is985) '985',
-                    if (summary.is211) '211',
-                    if (summary.isDoubleFirstClass) '双一流',
-                  ].join(' · '),
-                ),
-                const SizedBox(height: 20),
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: () => Navigator.of(context).pop(),
-                        icon: const Icon(Icons.favorite_border_rounded),
-                        label: const Text('收藏'),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: FilledButton.icon(
-                        onPressed: () {
-                          Navigator.of(context).pop();
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('已加入对比列表')),
-                          );
-                        },
-                        icon: const Icon(Icons.compare_arrows_rounded),
-                        label: const Text('加入对比'),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
+        backgroundColor: Colors.transparent,
+        builder: (context) => _CollegeDetailSheet(
+          summary: summary,
+          detailData: data,
+          client: _client,
+          token: token, // 传递 token
         ),
       );
     } catch (e) {
@@ -1052,4 +1013,587 @@ class SchoolEnrollmentRecord {
   String get admissionCountLabel => admissionCount?.toString() ?? '-';
   String get minScoreLabel => minScore?.toString() ?? '-';
   String get minRankLabel => minRank?.toString() ?? '-';
+}
+
+// 院校详情Sheet组件
+class _CollegeDetailSheet extends StatefulWidget {
+  const _CollegeDetailSheet({
+    required this.summary,
+    required this.detailData,
+    required this.client,
+    required this.token, 
+  });
+
+  final CollegeSummary summary;
+  final Map<String, dynamic> detailData;
+  final ApiClient client;
+  final String token; 
+
+  @override
+  State<_CollegeDetailSheet> createState() => _CollegeDetailSheetState();
+}
+
+class _CollegeDetailSheetState extends State<_CollegeDetailSheet>
+    with SingleTickerProviderStateMixin {
+  late TabController _tabController;
+  List<AdmissionRecord>? _admissionRecords;
+  bool _isLoadingAdmissions = false;
+  String? _selectedProvince;
+  int? _selectedYear;
+
+  // 完整的省份列表
+  static const List<String> _provinces = [
+    '北京', '天津', '河北', '山西', '内蒙古',
+    '辽宁', '吉林', '黑龙江', '上海', '江苏',
+    '浙江', '安徽', '福建', '江西', '山东',
+    '河南', '湖北', '湖南', '广东', '广西',
+    '海南', '重庆', '四川', '贵州', '云南',
+    '西藏', '陕西', '甘肃', '青海', '宁夏',
+    '新疆', '香港', '澳门', '台湾',
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 2, vsync: this);
+    _tabController.addListener(() {
+      if (_tabController.index == 1 && _admissionRecords == null) {
+        _loadAdmissionRecords();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadAdmissionRecords() async {
+    if (widget.token.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('请先登录')),
+        );
+      }
+      return;
+    }
+
+    setState(() {
+      _isLoadingAdmissions = true;
+    });
+
+    try {
+      final query = <String, String>{};
+      if (_selectedProvince != null) query['province'] = _selectedProvince!;
+      if (_selectedYear != null) query['year'] = _selectedYear.toString();
+
+      final response = await widget.client.get(
+        '/colleges/${widget.summary.collegeCode}/admissions',
+        headers: {'Authorization': 'Bearer ${widget.token}'}, // 使用 widget.token
+        query: query,
+      );
+
+      final records = (response['data'] as List?)
+          ?.map((e) => AdmissionRecord.fromJson(e as Map<String, dynamic>))
+          .toList() ?? [];
+
+      setState(() {
+        _admissionRecords = records;
+        _isLoadingAdmissions = false;
+      });
+    } catch (e) {
+      setState(() {
+        _isLoadingAdmissions = false;
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('加载录取数据失败: $e')),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return DraggableScrollableSheet(
+      initialChildSize: 0.85,
+      minChildSize: 0.5,
+      maxChildSize: 0.95,
+      builder: (context, scrollController) => Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+        ),
+        child: Column(
+          children: [
+            // 拖动指示器
+            Container(
+              margin: const EdgeInsets.only(top: 12, bottom: 8),
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: const Color(0xFFD3D9E5),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+
+            // 标题栏
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 8, 16, 16),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          widget.summary.collegeName,
+                          style: const TextStyle(
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF1A1F2E),
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '院校代码：${widget.summary.collegeCode}',
+                          style: const TextStyle(
+                            fontSize: 14,
+                            color: Color(0xFF7C8698),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close, size: 24),
+                    onPressed: () => Navigator.of(context).pop(),
+                    style: IconButton.styleFrom(
+                      backgroundColor: const Color(0xFFF5F7FB),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            // Tab栏
+            Container(
+              decoration: const BoxDecoration(
+                border: Border(
+                  bottom: BorderSide(color: Color(0xFFE8ECF4), width: 1),
+                ),
+              ),
+              child: TabBar(
+                controller: _tabController,
+                labelColor: const Color(0xFF2C5BF0),
+                unselectedLabelColor: const Color(0xFF7C8698),
+                indicatorColor: const Color(0xFF2C5BF0),
+                indicatorWeight: 3,
+                labelStyle: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                ),
+                tabs: const [
+                  Tab(text: '院校信息'),
+                  Tab(text: '历年录取'),
+                ],
+              ),
+            ),
+
+            // 内容区
+            Expanded(
+              child: TabBarView(
+                controller: _tabController,
+                children: [
+                  // 院校信息标签页
+                  ListView(
+                    controller: scrollController,
+                    padding: const EdgeInsets.all(24),
+                    children: [
+                      _DetailRow(
+                        label: '所在省份',
+                        value: widget.detailData['PROVINCE']?.toString() ?? '-',
+                      ),
+                      const SizedBox(height: 12),
+                      _DetailRow(
+                        label: '所在城市',
+                        value: widget.detailData['CITY_NAME']?.toString() ?? '-',
+                      ),
+                      const SizedBox(height: 12),
+                      _DetailRow(
+                        label: '院校类型',
+                        value: widget.detailData['COLLEGE_TYPE']?.toString() ?? '-',
+                      ),
+                      const SizedBox(height: 12),
+                      _DetailRow(
+                        label: '院校标签',
+                        value: [
+                          if (widget.summary.is985) '985',
+                          if (widget.summary.is211) '211',
+                          if (widget.summary.isDoubleFirstClass) '双一流',
+                        ].join(' · '),
+                      ),
+                      const SizedBox(height: 24),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: () => Navigator.of(context).pop(),
+                              icon: const Icon(Icons.favorite_border_rounded),
+                              label: const Text('收藏'),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: FilledButton.icon(
+                              onPressed: () {
+                                Navigator.of(context).pop();
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('已加入对比列表')),
+                                );
+                              },
+                              icon: const Icon(Icons.compare_arrows_rounded),
+                              label: const Text('加入对比'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+
+                  // 历年录取标签页
+                  Column(
+                    children: [
+                      // 筛选条件
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: const BoxDecoration(
+                          color: Color(0xFFF5F7FB),
+                          border: Border(
+                            bottom: BorderSide(color: Color(0xFFE8ECF4)),
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              '筛选条件',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF424A59),
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: DropdownButtonFormField<String?>(
+                                    value: _selectedProvince,
+                                    decoration: const InputDecoration(
+                                      labelText: '省份',
+                                      isDense: true,
+                                      contentPadding: EdgeInsets.symmetric(
+                                        horizontal: 12,
+                                        vertical: 8,
+                                      ),
+                                    ),
+                                    items: [
+                                      const DropdownMenuItem(
+                                        value: null,
+                                        child: Text('全部'),
+                                      ),
+                                      ..._provinces.map(
+                                        (province) => DropdownMenuItem(
+                                          value: province,
+                                          child: Text(province),
+                                        ),
+                                      ),
+                                    ],
+                                    onChanged: (value) {
+                                      setState(() {
+                                        _selectedProvince = value;
+                                      });
+                                      _loadAdmissionRecords();
+                                    },
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: DropdownButtonFormField<int?>(
+                                    value: _selectedYear,
+                                    decoration: const InputDecoration(
+                                      labelText: '年份',
+                                      isDense: true,
+                                      contentPadding: EdgeInsets.symmetric(
+                                        horizontal: 12,
+                                        vertical: 8,
+                                      ),
+                                    ),
+                                    items: [
+                                      const DropdownMenuItem(
+                                        value: null,
+                                        child: Text('全部'),
+                                      ),
+                                      for (int year = DateTime.now().year - 1;
+                                          year >= 2018;
+                                          year--)
+                                        DropdownMenuItem(
+                                          value: year,
+                                          child: Text(year.toString()),
+                                        ),
+                                    ],
+                                    onChanged: (value) {
+                                      setState(() {
+                                        _selectedYear = value;
+                                      });
+                                      _loadAdmissionRecords();
+                                    },
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      // 录取数据列表
+                      Expanded(
+                        child: _isLoadingAdmissions
+                            ? const Center(child: CircularProgressIndicator())
+                            : _admissionRecords == null
+                                ? const Center(
+                                    child: Text('加载中...'),
+                                  )
+                                : _admissionRecords!.isEmpty
+                                    ? Center(
+                                        child: Column(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.center,
+                                          children: [
+                                            Icon(
+                                              Icons.inbox_outlined,
+                                              size: 64,
+                                              color: Colors.grey.shade400,
+                                            ),
+                                            const SizedBox(height: 16),
+                                            Text(
+                                              '暂无录取数据',
+                                              style: TextStyle(
+                                                color: Colors.grey.shade600,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      )
+                                    : ListView.builder(
+                                        controller: scrollController,
+                                        padding: const EdgeInsets.all(16),
+                                        itemCount: _admissionRecords!.length,
+                                        itemBuilder: (context, index) {
+                                          final record =
+                                              _admissionRecords![index];
+                                          return _AdmissionRecordCard(
+                                            record: record,
+                                          );
+                                        },
+                                      ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// 录取记录卡片
+class _AdmissionRecordCard extends StatelessWidget {
+  const _AdmissionRecordCard({required this.record});
+
+  final AdmissionRecord record;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF5F7FB),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: const Color(0xFFE8ECF4),
+          width: 1,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  record.majorName,
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: const Color(0xFF1A1F2E),
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 4,
+                ),
+                decoration: BoxDecoration(
+                  color: record.type == '理科'
+                      ? const Color(0xFFE3F2FD)
+                      : const Color(0xFFFFF3E0),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  record.type,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: record.type == '理科'
+                        ? const Color(0xFF1976D2)
+                        : const Color(0xFFF57C00),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: _InfoItem(
+                  icon: Icons.calendar_today,
+                  label: '年份',
+                  value: record.admissionYear.toString(),
+                ),
+              ),
+              Expanded(
+                child: _InfoItem(
+                  icon: Icons.location_on,
+                  label: '省份',
+                  value: record.province,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: _InfoItem(
+                  icon: Icons.score,
+                  label: '最低分',
+                  value: record.minScore,
+                  valueColor: const Color(0xFF2C5BF0),
+                ),
+              ),
+              Expanded(
+                child: _InfoItem(
+                  icon: Icons.trending_up,
+                  label: '最低位次',
+                  value: record.minRank.toString(),
+                  valueColor: const Color(0xFF21B573),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// 信息项组件
+class _InfoItem extends StatelessWidget {
+  const _InfoItem({
+    required this.icon,
+    required this.label,
+    required this.value,
+    this.valueColor,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+  final Color? valueColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Icon(icon, size: 14, color: const Color(0xFF7C8698)),
+        const SizedBox(width: 4),
+        Text(
+          '$label: ',
+          style: const TextStyle(
+            fontSize: 12,
+            color: Color(0xFF7C8698),
+          ),
+        ),
+        Expanded(
+          child: Text(
+            value,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: valueColor ?? const Color(0xFF424A59),
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// 录取记录数据模型
+class AdmissionRecord {
+  const AdmissionRecord({
+    required this.admissionId,
+    required this.majorName,
+    required this.type,
+    required this.province,
+    required this.admissionYear,
+    required this.minScore,
+    required this.minRank,
+  });
+
+  final int admissionId;
+  final String majorName;
+  final String type;
+  final String province;
+  final int admissionYear;
+  final String minScore;
+  final int minRank;
+
+  factory AdmissionRecord.fromJson(Map<String, dynamic> json) {
+    return AdmissionRecord(
+      admissionId: json['ADMISSION_ID'] as int,
+      majorName: json['MAJOR_NAME']?.toString() ?? '-',
+      type: json['TYPE']?.toString() ?? '-',
+      province: json['PROVINCE']?.toString() ?? '-',
+      admissionYear: json['ADMISSION_YEAR'] as int,
+      minScore: json['MIN_SCORE']?.toString() ?? '-',
+      minRank: json['MIN_RANK'] as int? ?? 0,
+    );
+  }
 }

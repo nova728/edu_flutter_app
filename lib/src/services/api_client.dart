@@ -7,14 +7,18 @@ import 'api_exception.dart';
 class ApiClient {
   ApiClient({http.Client? httpClient, String? baseUrl})
       : _httpClient = httpClient ?? http.Client(),
-        _baseUrl = baseUrl ?? const String.fromEnvironment('API_BASE_URL', defaultValue: 'http://localhost:3000');
+        _baseUrl = baseUrl ?? const String.fromEnvironment(
+          'API_BASE_URL',
+          defaultValue: 'https://marlyn-unalleviative-annabel.ngrok-free.dev',
+        );
 
   final http.Client _httpClient;
   final String _baseUrl;
-
+  
   // 添加默认请求头
   static const Map<String, String> _headers = {
     'Content-Type': 'application/json; charset=utf-8',
+    'ngrok-skip-browser-warning': 'true',
   };
 
   Future<Map<String, dynamic>> post(
