@@ -7,11 +7,13 @@ class AuthScope extends InheritedWidget {
     super.key,
     required this.session,
     required this.onSignOut,
+    required this.onUpdateUser,
     required super.child,
   });
 
   final AuthSession session;
   final VoidCallback onSignOut;
+  final ValueChanged<AuthUser> onUpdateUser;
 
   static AuthScope of(BuildContext context) {
     final scope = context.dependOnInheritedWidgetOfExactType<AuthScope>();
@@ -20,5 +22,6 @@ class AuthScope extends InheritedWidget {
   }
 
   @override
-  bool updateShouldNotify(AuthScope oldWidget) => oldWidget.session.token != session.token;
+  bool updateShouldNotify(AuthScope oldWidget) =>
+      oldWidget.session.token != session.token || oldWidget.session.user != session.user;
 }

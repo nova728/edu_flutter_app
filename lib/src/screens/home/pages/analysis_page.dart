@@ -25,21 +25,21 @@ class AnalysisPage extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Wrap(
+            const Wrap(
               spacing: 12,
               runSpacing: 12,
-              children: const [
+              children: [
                 StatChip(label: '当前总分', value: '628', meta: '较上次 +6'),
                 StatChip(label: '目标院校差距', value: '-6', meta: '距浙江大学', variant: StatChipVariant.warning),
                 StatChip(label: '全省位次', value: '12,430', meta: 'Top 3.1%', variant: StatChipVariant.primary),
               ],
             ),
             const SizedBox(height: 20),
-            SectionCard(
+            const SectionCard(
               title: '单科强弱分析',
               subtitle: '个人得分率分析',
               child: Column(
-                children: const [
+                children: [
                   _SubjectRow(label: '数学', mine: 138, avg: 150),
                   SizedBox(height: 12),
                   _SubjectRow(label: '语文', mine: 122, avg: 150),
@@ -64,22 +64,6 @@ class AnalysisPage extends StatelessWidget {
                   borderRadius: BorderRadius.circular(22),
                 ),
                 child: const Center(child: Text('📈 成绩折线图占位')),
-              ),
-            ),
-            const SizedBox(height: 20),
-            SectionCard(
-              title: '提升路线图',
-              subtitle: '按周执行复盘',
-              child: Column(
-                children: const [
-                  _TimelineRow(title: '本周', detail: '完成语文阅读专项训练 5 套,并提交老师点评。'),
-                  SizedBox(height: 12),
-                  _TimelineRow(title: '下周', detail: '参加数学拔尖班模拟赛，复盘冲刺题准确率。'),
-                  SizedBox(height: 12),
-                  _TimelineRow(title: '月度', detail: '更新错题本，输出弱项分析报告，并与班主任沟通。'),
-                  SizedBox(height: 12),
-                  _TimelineRow(title: '考前', detail: '进行心理调适训练，保持作息及饮食规律。'),
-                ],
               ),
             ),
           ],

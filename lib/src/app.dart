@@ -6,6 +6,7 @@ import 'screens/home/home_shell.dart';
 import 'services/api_exception.dart';
 import 'services/auth_service.dart';
 import 'theme/app_theme.dart';
+import 'state/auth_scope.dart';
 
 class ZygcApp extends StatefulWidget {
   const ZygcApp({super.key});
@@ -71,15 +72,31 @@ class _ZygcAppState extends State<ZygcApp> {
     });
   }
 
+  void _updateUser(AuthUser user) {
+    if (_session == null) return;
+    setState(() {
+      _session = AuthSession(token: _session!.token, user: user);
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light,
+      builder: (context, child) => _isAuthenticated
+          ? AuthScope(
+              session: _session!,
+              onSignOut: _signOut,
+              onUpdateUser: _updateUser,
+              child: child!,
+            )
+          : child!,
       home: _isAuthenticated
           ? HomeShell(
               session: _session!,
               onSignOut: _signOut,
+              onUpdateUser: _updateUser,
             )
           : AuthScreen(
               onLogin: _handleLogin,

@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:zygc_flutter_prototype/src/models/auth_models.dart';
 import 'package:zygc_flutter_prototype/src/widgets/section_card.dart';
+import 'package:zygc_flutter_prototype/src/state/auth_scope.dart';
+import 'package:zygc_flutter_prototype/src/services/api_client.dart';
+import 'package:flutter/foundation.dart';
 
 class ProfileEditPage extends StatefulWidget {
   const ProfileEditPage({required this.user, super.key});
@@ -12,9 +15,13 @@ class ProfileEditPage extends StatefulWidget {
 }
 
 class _ProfileEditPageState extends State<ProfileEditPage> {
+  final ApiClient _client = ApiClient();
   late final TextEditingController _usernameController;
   late final TextEditingController _provinceController;
   late final TextEditingController _schoolController;
+  late final TextEditingController _oldPasswordController;
+  late final TextEditingController _newPasswordController;
+  bool _showPasswordForm = false;
 
   @override
   void initState() {
@@ -22,6 +29,8 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
     _usernameController = TextEditingController(text: widget.user.username);
     _provinceController = TextEditingController(text: widget.user.province);
     _schoolController = TextEditingController(text: widget.user.schoolName);
+    _oldPasswordController = TextEditingController();
+    _newPasswordController = TextEditingController();
   }
 
   @override
@@ -29,6 +38,8 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
     _usernameController.dispose();
     _provinceController.dispose();
     _schoolController.dispose();
+    _oldPasswordController.dispose();
+    _newPasswordController.dispose();
     super.dispose();
   }
 
@@ -82,6 +93,7 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
                       hintText: '请输入省份',
                       prefixIcon: Icon(Icons.place_outlined),
                     ),
+                    enabled: false,
                   ),
                   const SizedBox(height: 16),
                   TextField(
@@ -106,21 +118,82 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
                     title: '修改密码',
                     subtitle: '定期更换密码保障安全',
                     onTap: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('密码修改功能开发中')),
-                      );
+                      setState(() {
+                        _showPasswordForm = !_showPasswordForm;
+                      });
                     },
                   ),
-                  const SizedBox(height: 12),
-                  _SecurityItem(
-                    icon: Icons.phone_android_rounded,
-                    title: '绑定手机',
-                    subtitle: '用于接收验证码',
-                    onTap: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('手机绑定功能开发中')),
-                      );
-                    },
+                  AnimatedCrossFade(
+                    firstChild: const SizedBox.shrink(),
+                    secondChild: Column(
+                      children: [
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: _oldPasswordController,
+                          obscureText: true,
+                          decoration: const InputDecoration(
+                            labelText: '旧密码',
+                            hintText: '请输入旧密码',
+                            prefixIcon: Icon(Icons.lock_open_rounded),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: _newPasswordController,
+                          obscureText: true,
+                          decoration: const InputDecoration(
+                            labelText: '新密码',
+                            hintText: '请输入新密码',
+                            prefixIcon: Icon(Icons.lock_rounded),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        SizedBox(
+                          width: double.infinity,
+                          child: FilledButton(
+                            onPressed: () async {
+                              final oldPwd = _oldPasswordController.text.trim();
+                              final newPwd = _newPasswordController.text.trim();
+                              if (oldPwd.isEmpty || newPwd.isEmpty) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('请输入旧密码和新密码')),
+                                );
+                                return;
+                              }
+                              try {
+                                final scope = AuthScope.of(context);
+                                final token = scope.session.token;
+                                await _client.post(
+                                  '/users/change-password',
+                                  headers: {'Authorization': 'Bearer $token'},
+                                  body: {
+                                    'oldPassword': oldPwd,
+                                    'newPassword': newPwd,
+                                  },
+                                );
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('密码修改成功')),
+                                );
+                                setState(() {
+                                  _showPasswordForm = false;
+                                });
+                                _oldPasswordController.clear();
+                                _newPasswordController.clear();
+                              } catch (e) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text('修改失败：$e')),
+                                );
+                              }
+                            },
+                            child: const Text('确认修改'),
+                          ),
+                        ),
+                      ],
+                    ),
+                    crossFadeState: _showPasswordForm
+                        ? CrossFadeState.showSecond
+                        : CrossFadeState.showFirst,
+                    duration: const Duration(milliseconds: 250),
                   ),
                 ],
               ),
@@ -129,11 +202,43 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
             SizedBox(
               width: double.infinity,
               child: FilledButton(
-                onPressed: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('信息保存成功')),
-                  );
-                  Navigator.of(context).pop();
+                onPressed: () async {
+                  final username = _usernameController.text.trim();
+                  final schoolName = _schoolController.text.trim();
+                  final body = <String, dynamic>{};
+                  if (username.isNotEmpty && username != (widget.user.username)) {
+                    body['username'] = username;
+                  }
+                  body['schoolName'] = schoolName;
+                  if (body.isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('没有可更新的字段')),
+                    );
+                    return;
+                  }
+                  try {
+                    final scope = AuthScope.of(context);
+                    final token = scope.session.token;
+                    final res = await _client.patch(
+                      '/users/me',
+                      headers: {'Authorization': 'Bearer $token'},
+                      body: body,
+                    );
+                    final updated = res['user'];
+                    if (updated is Map<String, dynamic>) {
+                      final newUser = AuthUser.fromJson(updated);
+                      scope.onUpdateUser(newUser);
+                    }
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('信息保存成功')),
+                    );
+                    Navigator.of(context).pop();
+                  } catch (e) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('保存失败：$e')),
+                    );
+                    debugPrint('保存失败：$e');
+                  }
                 },
                 style: FilledButton.styleFrom(
                   minimumSize: const Size.fromHeight(52),
