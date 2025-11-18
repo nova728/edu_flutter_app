@@ -1,11 +1,12 @@
+import 'dart:convert';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import 'package:zygc_flutter_prototype/src/widgets/section_card.dart';
 import 'package:zygc_flutter_prototype/src/widgets/stat_chip.dart';
 import 'package:zygc_flutter_prototype/src/widgets/tag_chip.dart';
-import 'analysis_page.dart';
+import 'score_ai_analysis_page.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'dart:convert';
 import 'package:zygc_flutter_prototype/src/state/auth_scope.dart';
 
 class DashboardPage extends StatelessWidget {
@@ -27,6 +28,8 @@ class DashboardPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final username = AuthScope.of(context).session.user.username;
+    final greetingName = username.isNotEmpty ? username : '同学';
 
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(20, 24, 20, 120),
@@ -38,7 +41,7 @@ class DashboardPage extends StatelessWidget {
             children: [
               Expanded(
                 child: Text(
-                  'Hi，同学',
+                  'Hi，$greetingName',
                   style: theme.textTheme.headlineSmall?.copyWith(
                     fontWeight: FontWeight.w700,
                     color: const Color(0xFF1F2430),
@@ -59,14 +62,14 @@ class DashboardPage extends StatelessWidget {
             onGoProfile: onGoProfile,
           ),
           const SizedBox(height: 20),
-          const SectionCard(
+          SectionCard(
             title: '成绩定位',
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 _ScoreOverview(),
-                SizedBox(height: 18),
-                _ScoreTags(),
+                const SizedBox(height: 18),
+                const _ScoreTags(),
               ],
             ),
           ),
@@ -117,59 +120,58 @@ class DashboardPage extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 20),
-          const SectionCard(
+          SectionCard(
             title: '成绩趋势',
-            subtitle: '最近 3 次模考',
-            trailing: _Badge(label: '实时更新'),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _ChartPlaceholder(
-                  label: '成绩趋势图表',
-                  icon: Icons.show_chart_rounded,
-                ),
-                SizedBox(height: 16),
-                _TrendRow(label: '市二模（最新）', value: '621 分 ▲ +6'),
-                SizedBox(height: 10),
-                _TrendRow(label: '区一模', value: '634 分 ▲ +19'),
-                SizedBox(height: 10),
-                _TrendRow(label: '校段考', value: '615 分'),
-              ],
+            subtitle: '最近 5 次考试',
+            trailing: const _Badge(label: '实时更新'),
+            child: FutureBuilder<List<_TrendPoint>>(
+              future: _loadTrendData(context),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState != ConnectionState.done) {
+                  return const SizedBox(
+                    height: 200,
+                    child: Center(child: CircularProgressIndicator()),
+                  );
+                }
+                final points = snapshot.data ?? const <_TrendPoint>[];
+                if (points.length < 2) {
+                  return const SizedBox(
+                    height: 200,
+                    child: Center(child: Text('暂无足够趋势数据，请先录入多次成绩')),
+                  );
+                }
+                final latest = points.reversed.take(3).toList();
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _TrendChartView(points: points),
+                    const SizedBox(height: 16),
+                    for (var i = 0; i < latest.length; i++) ...[
+                      if (i > 0) const SizedBox(height: 10),
+                      _TrendRow(
+                        label: latest[i].label,
+                        value: _formatTrendValue(
+                          latest[i],
+                          i + 1 < latest.length ? latest[i + 1] : null,
+                        ),
+                      ),
+                    ],
+                  ],
+                );
+              },
             ),
           ),
           const SizedBox(height: 20),
-          const SectionCard(
+          SectionCard(
             title: '单科分析',
             subtitle: '个人能力评估',
-            trailing: _Badge(label: '雷达对比'),
+            trailing: const _Badge(label: '雷达对比'),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _RadarSection(),
-                SizedBox(height: 18),
-                _SubjectProgress(
-                  label: '数学',
-                  valueLabel: '92%',
-                  progress: 0.92,
-                  color: Color(0xFF21B573),
-                  description: '强项，继续保持',
-                ),
-                SizedBox(height: 16),
-                _SubjectProgress(
-                  label: '语文',
-                  valueLabel: '81%',
-                  progress: 0.81,
-                  color: Color(0xFFFF9F43),
-                  description: '需要加强作文和阅读',
-                ),
-                SizedBox(height: 16),
-                _SubjectProgress(
-                  label: '英语',
-                  valueLabel: '91%',
-                  progress: 0.91,
-                  color: Color(0xFF21B573),
-                  description: '保持优势',
-                ),
+                const _SubjectRadarChart(),
+                const SizedBox(height: 18),
+                const _CoreSubjectProgressList(),
               ],
             ),
           ),
@@ -322,7 +324,7 @@ class _QuickActions extends StatelessWidget {
           tone: _QuickActionTone.outline,
           onTap: () {
             Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const AnalysisPage()),
+              MaterialPageRoute(builder: (_) => const ScoreAiAnalysisPage()),
             );
           },
         ),
@@ -458,7 +460,7 @@ class _ScoreOverviewState extends State<_ScoreOverview> {
     final scope = AuthScope.of(context);
     final userId = scope.session.user.userId;
     final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString('scores_$userId');
+    final raw = prefs.getString('scores_${scope.session.user.userId}');
     double? score;
     int? rank;
     double? topPercent;
@@ -670,39 +672,244 @@ class _StatusTag extends StatelessWidget {
   }
 }
 
-class _ChartPlaceholder extends StatelessWidget {
-  const _ChartPlaceholder({required this.label, required this.icon});
+Future<List<_TrendPoint>> _loadTrendData(BuildContext context) async {
+  final scope = AuthScope.of(context);
+  final prefs = await SharedPreferences.getInstance();
+  final raw = prefs.getString('scores_${scope.session.user.userId}');
+  if (raw == null || raw.isEmpty) {
+    return [
+      _TrendPoint(label: '示例一', score: 620, createdAt: DateTime(2024, 3, 10)),
+      _TrendPoint(label: '示例二', score: 632, createdAt: DateTime(2024, 5, 12)),
+      _TrendPoint(label: '示例三', score: 648, createdAt: DateTime(2024, 6, 18)),
+    ];
+  }
+  final decoded = (jsonDecode(raw) as List).cast<dynamic>();
+  final points = <_TrendPoint>[];
+  for (final item in decoded) {
+    if (item is! Map) continue;
+    final map = item.map((k, v) => MapEntry(k.toString(), v));
+    final score = _extractDouble(map, [
+      'TOTAL_SCORE',
+      'totalScore',
+      'SCORE',
+      'score',
+      'SUM_SCORE',
+      'sumScore',
+    ]);
+    if (score == null || score <= 0) continue;
+    final label = (map['MOCK_EXAM_NAME'] ??
+            map['mockExamName'] ??
+            (map['EXAM_YEAR'] ?? map['examYear']))
+        ?.toString()
+        .trim();
+    final createdRaw =
+        map['CREATED_AT'] ?? map['createdAt'] ?? map['EXAM_YEAR'] ?? map['examYear'];
+    DateTime createdAt = DateTime.now();
+    if (createdRaw != null) {
+      createdAt = DateTime.tryParse(createdRaw.toString()) ??
+          DateTime(createdRaw is int ? createdRaw : DateTime.now().year);
+    }
+    points.add(_TrendPoint(
+      label: (label != null && label.isNotEmpty) ? label : createdAt.year.toString(),
+      score: score,
+      createdAt: createdAt,
+    ));
+  }
+  if (points.isEmpty) {
+    return [
+      _TrendPoint(label: '示例一', score: 620, createdAt: DateTime(2024, 3, 10)),
+      _TrendPoint(label: '示例二', score: 632, createdAt: DateTime(2024, 5, 12)),
+      _TrendPoint(label: '示例三', score: 648, createdAt: DateTime(2024, 6, 18)),
+    ];
+  }
+  points.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+  return points.take(5).toList().reversed.toList();
+}
 
-  final String label;
-  final IconData icon;
+double? _extractDouble(Map<String, dynamic> map, List<String> keys) {
+  for (final key in keys) {
+    final value = map[key];
+    if (value == null) continue;
+    final parsed = double.tryParse(value.toString());
+    if (parsed != null) return parsed;
+  }
+  return null;
+}
+
+class _TrendChartView extends StatelessWidget {
+  const _TrendChartView({required this.points});
+
+  final List<_TrendPoint> points;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: 180,
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0x142C5BF0), Color(0x082C5BF0)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0x1A2C5BF0)),
-      ),
-      alignment: Alignment.center,
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(icon, size: 40, color: const Color(0xFF2C5BF0)),
-          const SizedBox(height: 12),
-          Text(
-            label,
-            style: Theme.of(context).textTheme.bodyLarge?.copyWith(color: const Color(0xFF2C5BF0)),
-          ),
-        ],
+    return SizedBox(
+      height: 200,
+      child: _TrendChart(points: points),
+    );
+  }
+}
+
+String _formatTrendValue(_TrendPoint current, _TrendPoint? previous) {
+  final scoreText = '${current.score.round()} 分';
+  if (previous == null) return scoreText;
+  final diff = current.score - previous.score;
+  if (diff > 0.1) return '$scoreText ▲ +${diff.round().abs()}';
+  if (diff < -0.1) return '$scoreText ▼ ${diff.round().abs()}';
+  return '$scoreText ▬ 0';
+}
+
+class _TrendChart extends StatelessWidget {
+  const _TrendChart({required this.points});
+
+  final List<_TrendPoint> points;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) => CustomPaint(
+        size: Size(constraints.maxWidth, 200),
+        painter: _TrendChartPainter(points),
       ),
     );
   }
+}
+
+class _TrendChartPainter extends CustomPainter {
+  _TrendChartPainter(this.points);
+
+  final List<_TrendPoint> points;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    const double left = 48;
+    const double right = 16;
+    const double top = 16;
+    const double bottom = 36;
+
+    final chartWidth = size.width - left - right;
+    final chartHeight = size.height - top - bottom;
+
+    double minValue = points.map((e) => e.score).reduce(math.min);
+    double maxValue = points.map((e) => e.score).reduce(math.max);
+    if ((maxValue - minValue).abs() < 40) {
+      maxValue += 20;
+      minValue = (minValue - 20).clamp(0, 750);
+    }
+    minValue = math.max(0, minValue.floorToDouble());
+
+    final axisPaint = Paint()
+      ..color = const Color(0xFFE3E8EF)
+      ..strokeWidth = 1;
+
+    final pathPaint = Paint()
+      ..color = const Color(0xFF2C5BF0)
+      ..strokeWidth = 3
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+
+    final fillPaint = Paint()
+      ..shader = LinearGradient(
+        colors: [
+          const Color(0xFF2C5BF0).withOpacity(0.25),
+          const Color(0xFF2C5BF0).withOpacity(0.05),
+        ],
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+      ).createShader(Rect.fromLTWH(left, top, chartWidth, chartHeight));
+
+    const int gridLines = 4;
+    final textPainter = TextPainter(
+      textDirection: TextDirection.ltr,
+      textAlign: TextAlign.right,
+    );
+    for (int i = 0; i <= gridLines; i++) {
+      final dy = top + chartHeight / gridLines * i;
+      canvas.drawLine(Offset(left, dy), Offset(left + chartWidth, dy), axisPaint);
+
+      final value = maxValue - (maxValue - minValue) / gridLines * i;
+      textPainter.text = TextSpan(
+        text: value.round().toString(),
+        style: const TextStyle(fontSize: 10, color: Color(0xFF7C8698)),
+      );
+      textPainter.layout();
+      textPainter.paint(canvas, Offset(left - textPainter.width - 6, dy - textPainter.height / 2));
+    }
+
+    final dx = chartWidth / (points.length - 1);
+    final Path linePath = Path();
+    final Path fillPath = Path();
+    for (int i = 0; i < points.length; i++) {
+      final point = points[i];
+      final x = left + dx * i;
+      final normalized = (point.score - minValue) / (maxValue - minValue);
+      final y = top + chartHeight * (1 - normalized);
+
+      final offset = Offset(x, y);
+      if (i == 0) {
+        linePath.moveTo(offset.dx, offset.dy);
+        fillPath.moveTo(offset.dx, offset.dy);
+      } else {
+        linePath.lineTo(offset.dx, offset.dy);
+        fillPath.lineTo(offset.dx, offset.dy);
+      }
+    }
+    fillPath.lineTo(left + chartWidth, top + chartHeight);
+    fillPath.lineTo(left, top + chartHeight);
+    fillPath.close();
+
+    canvas.drawPath(fillPath, fillPaint);
+    canvas.drawPath(linePath, pathPaint);
+
+    final pointPaint = Paint()
+      ..color = const Color(0xFF2C5BF0)
+      ..style = PaintingStyle.fill;
+    final haloPaint = Paint()
+      ..color = const Color(0xFF2C5BF0).withOpacity(0.12)
+      ..style = PaintingStyle.fill;
+
+    for (int i = 0; i < points.length; i++) {
+      final point = points[i];
+      final x = left + dx * i;
+      final normalized = (point.score - minValue) / (maxValue - minValue);
+      final y = top + chartHeight * (1 - normalized);
+      canvas.drawCircle(Offset(x, y), 6, haloPaint);
+      canvas.drawCircle(Offset(x, y), 3, pointPaint);
+
+      final scorePainter = TextPainter(
+        text: TextSpan(
+          text: point.score.round().toString(),
+          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF1A1F2E)),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      scorePainter.paint(canvas, Offset(x - scorePainter.width / 2, y - 24));
+
+      final labelPainter = TextPainter(
+        text: TextSpan(
+          text: point.label,
+          style: const TextStyle(fontSize: 11, color: Color(0xFF7C8698)),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout(maxWidth: dx + 24);
+      labelPainter.paint(canvas, Offset(x - labelPainter.width / 2, top + chartHeight + 6));
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _TrendChartPainter oldDelegate) => oldDelegate.points != points;
+}
+
+class _TrendPoint {
+  const _TrendPoint({
+    required this.label,
+    required this.score,
+    required this.createdAt,
+  });
+
+  final String label;
+  final double score;
+  final DateTime createdAt;
 }
 
 class _TrendRow extends StatelessWidget {
@@ -714,74 +921,20 @@ class _TrendRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-
     return Row(
       children: [
         Expanded(
-          child: Text(label, style: theme.textTheme.bodyMedium?.copyWith(color: const Color(0xFF7C8698))),
+          child: Text(
+            label,
+            style: theme.textTheme.bodyMedium?.copyWith(color: const Color(0xFF7C8698)),
+          ),
         ),
         Text(
           value,
-          style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600, color: const Color(0xFF1F2430)),
-        ),
-      ],
-    );
-  }
-}
-
-class _RadarSection extends StatelessWidget {
-  const _RadarSection();
-
-  @override
-  Widget build(BuildContext context) {
-    return const Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _ChartPlaceholder(
-          label: '单科雷达图',
-          icon: Icons.radar_rounded,
-        ),
-        SizedBox(height: 12),
-        Wrap(
-          spacing: 18,
-          runSpacing: 8,
-          children: [
-            _LegendDot(label: '个人表现', color: Color(0xFF2C5BF0)),
-            _LegendDot(label: '满分参考', color: Color(0xFF7C8698), faded: true),
-          ],
-        ),
-      ],
-    );
-  }
-}
-
-class _LegendDot extends StatelessWidget {
-  const _LegendDot({required this.label, required this.color, this.faded = false});
-
-  final String label;
-  final Color color;
-  final bool faded;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          width: 12,
-          height: 12,
-          decoration: BoxDecoration(
-            color: faded ? color.withOpacity(0.45) : color,
-            shape: BoxShape.circle,
-            boxShadow: [
-              BoxShadow(color: color.withOpacity(0.2), blurRadius: 6),
-            ],
+          style: theme.textTheme.titleSmall?.copyWith(
+            fontWeight: FontWeight.w600,
+            color: const Color(0xFF1F2430),
           ),
-        ),
-        const SizedBox(width: 6),
-        Text(
-          label,
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(color: const Color(0xFF7C8698)),
         ),
       ],
     );
@@ -806,20 +959,19 @@ class _SubjectProgress extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text(
-              label,
-              style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
-            ),
+            Text(label, style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
             Text(
               valueLabel,
-              style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700, color: color),
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w700,
+                color: color,
+              ),
             ),
           ],
         ),
@@ -841,4 +993,340 @@ class _SubjectProgress extends StatelessWidget {
       ],
     );
   }
+}
+
+class _SubjectRadarChart extends StatelessWidget {
+  const _SubjectRadarChart();
+
+  Future<List<_RadarEntry>> _loadRadarData(BuildContext context) async {
+    final scope = AuthScope.of(context);
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString('scores_${scope.session.user.userId}');
+    if (raw == null || raw.isEmpty) return const [];
+    final decoded = (jsonDecode(raw) as List).cast<dynamic>();
+    _RadarEntry? entryFactory(String key, double value) {
+      final max = _subjectMaxScore[key] ?? 150;
+      if (max <= 0 || value <= 0) return null;
+      final ratio = (value / max).clamp(0.0, 1.0);
+      return _RadarEntry(label: key, value: value, maxValue: max.toDouble(), ratio: ratio);
+    }
+
+    decoded.sort((a, b) {
+      final mapA = (a as Map).map((k, v) => MapEntry(k.toString(), v));
+      final mapB = (b as Map).map((k, v) => MapEntry(k.toString(), v));
+      final timeA = DateTime.tryParse((mapA['CREATED_AT'] ?? mapA['createdAt'] ?? '').toString()) ??
+          DateTime(mapA['EXAM_YEAR'] is int ? mapA['EXAM_YEAR'] as int : DateTime.now().year);
+      final timeB = DateTime.tryParse((mapB['CREATED_AT'] ?? mapB['createdAt'] ?? '').toString()) ??
+          DateTime(mapB['EXAM_YEAR'] is int ? mapB['EXAM_YEAR'] as int : DateTime.now().year);
+      return timeB.compareTo(timeA);
+    });
+
+    for (final item in decoded) {
+      if (item is! Map) continue;
+      final map = item.map((key, value) => MapEntry(key.toString(), value));
+      final detailRaw = map['SCORE_DETAILS'] ?? map['scoreDetails'];
+      if (detailRaw is! Map) continue;
+      final details = detailRaw.map((key, value) => MapEntry(key.toString(), value));
+      final entries = <_RadarEntry>[];
+      for (final entry in details.entries) {
+        final value = double.tryParse(entry.value?.toString() ?? '');
+        if (value == null) continue;
+        final normalizedKey = entry.key.replaceAll('（', '(').replaceAll('）', ')');
+        final radarEntry = entryFactory(normalizedKey, value);
+        if (radarEntry != null) entries.add(radarEntry);
+      }
+      if (entries.length >= 3) {
+        return entries.take(6).toList();
+      }
+    }
+    return const [];
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<_RadarEntry>>(
+      future: _loadRadarData(context),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          return const SizedBox(
+            height: 220,
+            child: Center(child: CircularProgressIndicator()),
+          );
+        }
+        final entries = snapshot.data!;
+        if (entries.length < 3) {
+          return Container(
+            height: 220,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: const Color(0xFFF5F7FB),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: const Text('暂无单科明细，请先录入包含科目成绩的记录'),
+          );
+        }
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              height: 220,
+              child: CustomPaint(
+                painter: _RadarPainter(entries),
+                size: Size.infinite,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 12,
+              runSpacing: 8,
+              children: entries.map((e) {
+                final percent = (e.ratio * 100).round();
+                return TagChip(label: '${e.label} $percent%');
+              }).toList(),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _RadarPainter extends CustomPainter {
+  _RadarPainter(this.entries);
+
+  final List<_RadarEntry> entries;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final int count = entries.length;
+    final Offset center = Offset(size.width / 2, size.height / 2);
+    final double radius = math.min(size.width, size.height) / 2 - 24;
+    final double angleStep = 2 * math.pi / count;
+
+    final Paint gridPaint = Paint()
+      ..color = const Color(0xFFE3E8EF)
+      ..style = PaintingStyle.stroke;
+
+    final Paint fillPaint = Paint()
+      ..color = const Color(0xFF2C5BF0).withOpacity(0.18)
+      ..style = PaintingStyle.fill;
+
+    final Paint borderPaint = Paint()
+      ..color = const Color(0xFF2C5BF0)
+      ..strokeWidth = 2
+      ..style = PaintingStyle.stroke;
+
+    const int layers = 4;
+    for (int level = layers; level >= 1; level--) {
+      final double layerRadius = radius * level / layers;
+      final Path layerPath = Path();
+      for (int i = 0; i < count; i++) {
+        final double angle = -math.pi / 2 + angleStep * i;
+        final Offset point = center + Offset(math.cos(angle), math.sin(angle)) * layerRadius;
+        if (i == 0) {
+          layerPath.moveTo(point.dx, point.dy);
+        } else {
+          layerPath.lineTo(point.dx, point.dy);
+        }
+      }
+      layerPath.close();
+      canvas.drawPath(layerPath, gridPaint..color = gridPaint.color.withOpacity(level == layers ? 1 : 0.3));
+    }
+
+    final Path radarPath = Path();
+    for (int i = 0; i < count; i++) {
+      final double angle = -math.pi / 2 + angleStep * i;
+      final double entryRadius = radius * entries[i].ratio;
+      final Offset point = center + Offset(math.cos(angle), math.sin(angle)) * entryRadius;
+      if (i == 0) {
+        radarPath.moveTo(point.dx, point.dy);
+      } else {
+        radarPath.lineTo(point.dx, point.dy);
+      }
+      canvas.drawLine(center, center + Offset(math.cos(angle), math.sin(angle)) * radius,
+          gridPaint..color = const Color(0xFFE3E8EF));
+    }
+    radarPath.close();
+    canvas.drawPath(radarPath, fillPaint);
+    canvas.drawPath(radarPath, borderPaint);
+
+    final textPainter = TextPainter(textDirection: TextDirection.ltr);
+    for (int i = 0; i < count; i++) {
+      final double angle = -math.pi / 2 + angleStep * i;
+      final Offset labelPoint = center + Offset(math.cos(angle), math.sin(angle)) * (radius + 14);
+      final entry = entries[i];
+      textPainter.text = TextSpan(
+        text: entry.label,
+        style: const TextStyle(fontSize: 12, color: Color(0xFF424A59), fontWeight: FontWeight.w600),
+      );
+      textPainter.layout(maxWidth: 80);
+      final offset = Offset(
+        labelPoint.dx - textPainter.width / 2,
+        labelPoint.dy - textPainter.height / 2,
+      );
+      textPainter.paint(canvas, offset);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _RadarPainter oldDelegate) => oldDelegate.entries != entries;
+}
+
+class _RadarEntry {
+  const _RadarEntry({
+    required this.label,
+    required this.value,
+    required this.maxValue,
+    required this.ratio,
+  });
+
+  final String label;
+  final double value;
+  final double maxValue;
+  final double ratio;
+}
+
+const Map<String, int> _subjectMaxScore = {
+  '语文': 150,
+  '数学': 150,
+  '英语': 150,
+  '物理': 100,
+  '化学': 100,
+  '生物': 100,
+  '政治': 100,
+  '历史': 100,
+  '地理': 100,
+  '理综': 300,
+  '文综': 300,
+};
+
+class _CoreSubjectProgressList extends StatelessWidget {
+  const _CoreSubjectProgressList();
+
+  Future<List<_SubjectScore>> _load(BuildContext context) => _loadCoreSubjectScores(context);
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<_SubjectScore>>(
+      future: _load(context),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const Padding(
+            padding: EdgeInsets.symmetric(vertical: 24),
+            child: Center(child: CircularProgressIndicator()),
+          );
+        }
+        if (snapshot.hasError) {
+          return const Text(
+            '单科数据加载失败，请稍后重试。',
+            style: TextStyle(color: Color(0xFFF04F52)),
+          );
+        }
+        final subjects = snapshot.data ?? <_SubjectScore>[];
+        if (subjects.isEmpty) {
+          return const Text(
+            '暂无单科成绩数据，请先录入包含语文、数学、英语的成绩记录。',
+            style: TextStyle(color: Color(0xFF7C8698)),
+          );
+        }
+        return Column(
+          children: [
+            for (int i = 0; i < subjects.length; i++) ...[
+              _SubjectProgress(
+                label: subjects[i].label,
+                valueLabel: '${(subjects[i].ratio * 100).round()}%',
+                progress: subjects[i].ratio,
+                color: _subjectColor(subjects[i].ratio),
+                description: _subjectDescription(subjects[i].label, subjects[i].ratio),
+              ),
+              if (i < subjects.length - 1) const SizedBox(height: 16),
+            ],
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _SubjectScore {
+  _SubjectScore({
+    required this.label,
+    required this.score,
+    required this.maxScore,
+  }) : ratio = (score / maxScore).clamp(0.0, 1.0);
+
+  final String label;
+  final double score;
+  final double maxScore;
+  final double ratio;
+}
+
+Color _subjectColor(double ratio) {
+  if (ratio >= 0.9) return const Color(0xFF21B573);
+  if (ratio >= 0.8) return const Color(0xFFFF9F43);
+  return const Color(0xFFF04F52);
+}
+
+String _subjectDescription(String subject, double ratio) {
+  if (ratio >= 0.9) return '强项，继续保持';
+  if (ratio >= 0.8) return '表现稳定，可继续巩固';
+  return '建议提升，关注$subject复习';
+}
+
+Future<List<_SubjectScore>> _loadCoreSubjectScores(BuildContext context) async {
+  final scope = AuthScope.of(context);
+  final prefs = await SharedPreferences.getInstance();
+  final raw = prefs.getString('scores_${scope.session.user.userId}');
+  if (raw == null || raw.isEmpty) return <_SubjectScore>[];
+  final decoded = (jsonDecode(raw) as List).cast<dynamic>();
+  Map<String, dynamic>? chosen;
+  DateTime? chosenTime;
+  for (final item in decoded) {
+    if (item is! Map) continue;
+    final map = item.map((k, v) => MapEntry(k.toString(), v));
+    final detailsRaw = map['SCORE_DETAILS'] ?? map['scoreDetails'];
+    if (detailsRaw is! Map || detailsRaw.isEmpty) continue;
+    final currentTime = _parseScoreTimestamp(map) ?? DateTime.now();
+    if (chosen == null || currentTime.isAfter(chosenTime ?? DateTime.fromMillisecondsSinceEpoch(0))) {
+      chosen = map;
+      chosenTime = currentTime;
+    }
+  }
+  if (chosen == null) return <_SubjectScore>[];
+  final detailsRaw = chosen['SCORE_DETAILS'] ?? chosen['scoreDetails'];
+  if (detailsRaw is! Map) return <_SubjectScore>[];
+  final details = detailsRaw.map((k, v) => MapEntry(k.toString(), v));
+  final result = <_SubjectScore>[];
+  for (final label in const ['语文', '数学', '英语']) {
+    final score = _extractSubjectScore(label, details);
+    final max = _subjectMaxScore[label]?.toDouble() ?? 150.0;
+    if (score != null && max > 0) {
+      result.add(_SubjectScore(label: label, score: score, maxScore: max));
+    }
+  }
+  return result;
+}
+
+DateTime? _parseScoreTimestamp(Map<String, dynamic> map) {
+  for (final key in const ['CREATED_AT', 'createdAt', 'UPDATED_AT', 'updatedAt']) {
+    final raw = map[key];
+    if (raw == null) continue;
+    final parsed = DateTime.tryParse(raw.toString());
+    if (parsed != null) return parsed;
+  }
+  final year = int.tryParse((map['EXAM_YEAR'] ?? map['examYear'])?.toString() ?? '');
+  return year != null && year > 0 ? DateTime(year) : null;
+}
+
+double? _extractSubjectScore(String subject, Map<String, dynamic> details) {
+  double? parse(Object? value) => double.tryParse(value?.toString() ?? '');
+  final direct = parse(details[subject]);
+  if (direct != null) return direct;
+  for (final entry in details.entries) {
+    if (entry.key.contains(subject)) {
+      final value = parse(entry.value);
+      if (value != null) return value;
+    }
+  }
+  return null;
 }
