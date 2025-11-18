@@ -1,15 +1,14 @@
 import 'package:flutter/material.dart';
 
 import 'package:zygc_flutter_prototype/src/models/auth_models.dart';
-import 'package:zygc_flutter_prototype/src/widgets/section_card.dart';
+import 'package:zygc_flutter_prototype/src/state/auth_scope.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'profile_edit_page.dart';
 import 'profile_weight_page.dart';
-import 'profile_share_page.dart';
 import 'profile_notification_page.dart';
 
 class ProfilePage extends StatelessWidget {
   const ProfilePage({
-    required this.user,
     required this.onSignOut,
     required this.onEditProfile,
     required this.onAdjustWeights,
@@ -17,7 +16,6 @@ class ProfilePage extends StatelessWidget {
     super.key,
   });
 
-  final AuthUser user;
   final VoidCallback onSignOut;
   final VoidCallback onEditProfile;
   final VoidCallback onAdjustWeights;
@@ -26,6 +24,7 @@ class ProfilePage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final authUser = AuthScope.of(context).session.user;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(20, 24, 20, 120),
@@ -58,10 +57,10 @@ class ProfilePage extends StatelessWidget {
                     Container(
                       width: 72,
                       height: 72,
-                      decoration: BoxDecoration(
+                      decoration: const BoxDecoration(
                         color: Colors.white,
                         shape: BoxShape.circle,
-                        boxShadow: const [
+                        boxShadow: [
                           BoxShadow(
                             color: Color(0x33000000),
                             blurRadius: 16,
@@ -71,8 +70,8 @@ class ProfilePage extends StatelessWidget {
                       ),
                       child: Center(
                         child: Text(
-                          user.username.isNotEmpty 
-                            ? user.username[0].toUpperCase() 
+                          authUser.username.isNotEmpty 
+                            ? authUser.username[0].toUpperCase() 
                             : '?',
                           style: const TextStyle(
                             fontSize: 32,
@@ -89,7 +88,7 @@ class ProfilePage extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            user.username.isNotEmpty ? user.username : '未设置',
+                            authUser.username.isNotEmpty ? authUser.username : '未设置',
                             style: const TextStyle(
                               fontSize: 24,
                               fontWeight: FontWeight.w700,
@@ -107,7 +106,7 @@ class ProfilePage extends StatelessWidget {
                               borderRadius: BorderRadius.circular(16),
                             ),
                             child: Text(
-                              'ID: ${user.userId}',
+                              'ID: ${authUser.userId}',
                               style: const TextStyle(
                                 fontSize: 12,
                                 fontWeight: FontWeight.w600,
@@ -133,7 +132,7 @@ class ProfilePage extends StatelessWidget {
                       Expanded(
                         child: _QuickInfoItem(
                           icon: Icons.place_rounded,
-                          label: user.province ?? '未填写',
+                          label: authUser.province ?? '未填写',
                         ),
                       ),
                       Container(
@@ -144,7 +143,7 @@ class ProfilePage extends StatelessWidget {
                       Expanded(
                         child: _QuickInfoItem(
                           icon: Icons.school_rounded,
-                          label: user.schoolName ?? '未填写',
+                          label: authUser.schoolName ?? '未填写',
                         ),
                       ),
                     ],
@@ -173,7 +172,7 @@ class ProfilePage extends StatelessWidget {
             onTap: () {
               Navigator.of(context).push(
                 MaterialPageRoute(
-                  builder: (_) => ProfileEditPage(user: user),
+                  builder: (_) => ProfileEditPage(user: authUser),
                 ),
               );
             },
@@ -196,21 +195,6 @@ class ProfilePage extends StatelessWidget {
           const SizedBox(height: 12),
           
           _FunctionTile(
-            icon: Icons.share_rounded,
-            title: '共享设置',
-            subtitle: '管理与家长、老师的协同',
-            color: const Color(0xFF21B573),
-            onTap: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => const ProfileSharePage(),
-                ),
-              );
-            },
-          ),
-          const SizedBox(height: 12),
-          
-          _FunctionTile(
             icon: Icons.notifications_outlined,
             title: '通知提醒',
             subtitle: '管理各类消息推送',
@@ -225,6 +209,54 @@ class ProfilePage extends StatelessWidget {
           ),
           const SizedBox(height: 24),
           
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: () async {
+                final dialogContext = context;
+                showDialog<void>(
+                  context: dialogContext,
+                  builder: (ctx) => AlertDialog(
+                    title: const Text('清除本地数据'),
+                    content: const Text('将清除当前用户的本地持久化数据（收藏、偏好权重等）。确定继续？'),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.of(ctx).pop(),
+                        child: const Text('取消'),
+                      ),
+                      FilledButton(
+                        onPressed: () async {
+                          Navigator.of(ctx).pop();
+                          final userId = AuthScope.of(context).session.user.userId;
+                          final prefs = await SharedPreferences.getInstance();
+                          for (final key in [
+                            'favorites_' + userId,
+                            'weights_' + userId,
+                            'scores_' + userId,
+                            'records_' + userId,
+                          ]) {
+                            await prefs.remove(key);
+                          }
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('已清除本地数据')),
+                          );
+                        },
+                        child: const Text('确认清除'),
+                      ),
+                    ],
+                  ),
+                );
+              },
+              icon: const Icon(Icons.delete_outline),
+              label: const Text('清除本地数据'),
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFFFF9500),
+                foregroundColor: Colors.white,
+                minimumSize: const Size.fromHeight(52),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
           // 退出登录按钮
           SizedBox(
             width: double.infinity,

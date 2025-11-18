@@ -4,6 +4,9 @@ import 'package:zygc_flutter_prototype/src/widgets/section_card.dart';
 import 'package:zygc_flutter_prototype/src/widgets/stat_chip.dart';
 import 'package:zygc_flutter_prototype/src/widgets/tag_chip.dart';
 import 'analysis_page.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:convert';
+import 'package:zygc_flutter_prototype/src/state/auth_scope.dart';
 
 class DashboardPage extends StatelessWidget {
   const DashboardPage({
@@ -35,7 +38,7 @@ class DashboardPage extends StatelessWidget {
             children: [
               Expanded(
                 child: Text(
-                  'Hi，李同学',
+                  'Hi，同学',
                   style: theme.textTheme.headlineSmall?.copyWith(
                     fontWeight: FontWeight.w700,
                     color: const Color(0xFF1F2430),
@@ -47,13 +50,6 @@ class DashboardPage extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 6),
-          Text(
-            '高考倒计时 48 天，系统已为你整合成绩、目标及风险提醒',
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: const Color(0xFF7C8698),
-              height: 1.4,
-            ),
-          ),
           const SizedBox(height: 20),
           const _StatSummary(),
           const SizedBox(height: 20),
@@ -63,65 +59,71 @@ class DashboardPage extends StatelessWidget {
             onGoProfile: onGoProfile,
           ),
           const SizedBox(height: 20),
-          SectionCard(
+          const SectionCard(
             title: '成绩定位',
-            subtitle: '高考成绩 · 2025 届',
-            trailing: const _Badge(label: '完成度 82%'),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              children: const [
+              children: [
                 _ScoreOverview(),
                 SizedBox(height: 18),
                 _ScoreTags(),
               ],
             ),
           ),
-          Align(
-            alignment: Alignment.centerRight,
-            child: TextButton(onPressed: onGoAnalysis, child: const Text('查看分析 →')),
-          ),
           const SizedBox(height: 16),
-          const _MessageBanner(),
-          const SizedBox(height: 20),
           SectionCard(
             title: '目标追踪',
             trailing: TextButton(onPressed: onGoCollege, child: const Text('查看全部 →')),
-            child: Column(
-              children: const [
-                _GoalRow(
-                  title: '华东师范大学',
-                  subtitle: '稳妥 · 位次差距缩小 320 名',
-                  variant: _StatusTagVariant.steady,
-                ),
-                SizedBox(height: 12),
-                _GoalRow(
-                  title: '浙江大学',
-                  subtitle: '冲刺 · 建议强化数学与语文',
-                  variant: _StatusTagVariant.risk,
-                ),
-                SizedBox(height: 12),
-                _GoalRow(
-                  title: '北京理工大学',
-                  subtitle: '稳妥 · 工科特色契合选科',
-                  variant: _StatusTagVariant.steady,
-                ),
-                SizedBox(height: 12),
-                _GoalRow(
-                  title: '东北师范大学',
-                  subtitle: '保底 · 历年本校成功率 92%',
-                  variant: _StatusTagVariant.safe,
-                ),
-              ],
+            child: FutureBuilder<List<Map<String, dynamic>>>(
+              future: (() async {
+                final scope = AuthScope.of(context);
+                final userId = scope.session.user.userId;
+                final prefs = await SharedPreferences.getInstance();
+                final raw = prefs.getString('favorites_$userId');
+                if (raw == null || raw.isEmpty) return const <Map<String, dynamic>>[];
+                try {
+                  final list = (jsonDecode(raw) as List).cast<Map<String, dynamic>>();
+                  return list;
+                } catch (_) {
+                  return const <Map<String, dynamic>>[];
+                }
+              })(),
+              builder: (context, snapshot) {
+                final items = snapshot.data ?? const <Map<String, dynamic>>[];
+                _StatusTagVariant _variantFor(Map<String, dynamic> c) {
+                  final cat = (c['category']?.toString() ?? '').trim();
+                  final p = (c['probability'] as num?)?.toDouble() ?? 0.0;
+                  if (cat == '保' || cat == '保底') return _StatusTagVariant.safe;
+                  if (cat == '稳' || cat == '稳妥') return _StatusTagVariant.steady;
+                  if (cat == '冲' || cat == '冲刺') return _StatusTagVariant.risk;
+                  if (cat == '参考') return _StatusTagVariant.reference;
+                  if (p >= 0.75) return _StatusTagVariant.safe;
+                  if (p >= 0.4) return _StatusTagVariant.steady;
+                  if (p >= 0.2) return _StatusTagVariant.risk;
+                  return _StatusTagVariant.reference;
+                }
+                if (items.isEmpty) {
+                  return const Text('暂无目标院校');
+                }
+                final rows = items.take(4).map((c) => Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: _GoalRow(
+                    title: c['name']?.toString() ?? '-',
+                    variant: _variantFor(c),
+                  ),
+                )).toList();
+                return Column(children: rows);
+              },
             ),
           ),
           const SizedBox(height: 20),
-          SectionCard(
+          const SectionCard(
             title: '成绩趋势',
             subtitle: '最近 3 次模考',
-            trailing: const _Badge(label: '实时更新'),
+            trailing: _Badge(label: '实时更新'),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              children: const [
+              children: [
                 _ChartPlaceholder(
                   label: '成绩趋势图表',
                   icon: Icons.show_chart_rounded,
@@ -136,13 +138,13 @@ class DashboardPage extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 20),
-          SectionCard(
+          const SectionCard(
             title: '单科分析',
             subtitle: '个人能力评估',
-            trailing: const _Badge(label: '雷达对比'),
+            trailing: _Badge(label: '雷达对比'),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              children: const [
+              children: [
                 _RadarSection(),
                 SizedBox(height: 18),
                 _SubjectProgress(
@@ -177,56 +179,107 @@ class DashboardPage extends StatelessWidget {
   }
 }
 
-class _StatSummary extends StatelessWidget {
+class _StatSummary extends StatefulWidget {
   const _StatSummary();
 
   @override
+  State<_StatSummary> createState() => _StatSummaryState();
+}
+
+class _StatSummaryState extends State<_StatSummary> {
+  Future<Map<String, dynamic>> _getCounts(BuildContext context) async {
+    final scope = AuthScope.of(context);
+    final userId = scope.session.user.userId;
+    final prefs = await SharedPreferences.getInstance();
+    int rec = 0, fav = 0;
+    final recRaw = prefs.getString('recommend_plan_$userId');
+    if (recRaw != null && recRaw.isNotEmpty) {
+      try {
+        final m = jsonDecode(recRaw) as Map<String, dynamic>;
+        rec = (m['count'] as num?)?.toInt() ?? 0;
+      } catch (_) {}
+    }
+    final favRaw = prefs.getString('favorites_$userId');
+    if (favRaw != null && favRaw.isNotEmpty) {
+      try {
+        final list = (jsonDecode(favRaw) as List);
+        fav = list.length;
+      } catch (_) {}
+    }
+    double? score;
+    int? rank;
+    final scoresRaw = prefs.getString('scores_$userId');
+    if (scoresRaw != null && scoresRaw.isNotEmpty) {
+      try {
+        final list = (jsonDecode(scoresRaw) as List).cast<dynamic>();
+        for (final e in list) {
+          final m = e is Map<String, dynamic> ? e : null;
+          if (m == null) continue;
+          final mockName = m['MOCK_EXAM_NAME']?.toString() ?? '';
+          if (mockName.isNotEmpty) continue;
+          for (final c in [m['TOTAL_SCORE'], m['totalScore'], m['SCORE'], m['score'], m['SUM_SCORE'], m['sumScore']]) {
+            final s = double.tryParse(c?.toString() ?? '');
+            if (s != null && s > 0 && s <= 750) { score = s; break; }
+          }
+          for (final c in [m['RANK_IN_PROVINCE'], m['rankInProvince'], m['rank'], m['minRank'], m['provinceRank']]) {
+            final r = int.tryParse(c?.toString() ?? '');
+            if (r != null && r > 0) { rank = r; break; }
+          }
+          if (score != null || rank != null) break;
+        }
+      } catch (_) {}
+    }
+    return {'recommend': rec, 'favorites': fav, 'score': score, 'rank': rank};
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Row(
-          children: const [
-            Expanded(
-              child: StatChip(
-                label: '综合分数',
-                value: '628',
-                meta: '位次 12,430',
-              ),
+    return FutureBuilder<Map<String, dynamic>>(
+      future: _getCounts(context),
+      builder: (context, snapshot) {
+        final counts = snapshot.data ?? const {'recommend': 0, 'favorites': 0};
+        final recommendCount = (counts['recommend'] as num?)?.toInt() ?? 0;
+        final favoritesCount = (counts['favorites'] as num?)?.toInt() ?? 0;
+        final scoreVal = (counts['score'] as num?)?.toDouble();
+        final rankVal = counts['rank'] as int?;
+        return Column(
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: StatChip(
+                    label: '综合分数',
+                    value: scoreVal != null ? '${scoreVal.round()}' : '-',
+                    meta: '位次 ' + (rankVal != null ? '$rankVal' : '-'),
+                  ),
+                ),
+                SizedBox(width: 12),
+                Expanded(
+                  child: StatChip(
+                    label: '匹配院校',
+                    value: '$recommendCount 所',
+                    meta: recommendCount > 0 ? '已保存推荐方案' : '偏好匹配完成',
+                    variant: StatChipVariant.success,
+                  ),
+                ),
+              ],
             ),
-            SizedBox(width: 12),
-            Expanded(
-              child: StatChip(
-                label: '匹配院校',
-                value: '28 所',
-                meta: '偏好匹配完成',
-                variant: StatChipVariant.success,
-              ),
+            SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: StatChip(
+                    label: '目标院校',
+                    value: '$favoritesCount 所',
+                    meta: favoritesCount > 0 ? '已添加追踪' : '尚未添加',
+                    variant: StatChipVariant.warning,
+                  ),
+                ),
+              ],
             ),
           ],
-        ),
-        const SizedBox(height: 12),
-        Row(
-          children: const [
-            Expanded(
-              child: StatChip(
-                label: '目标院校',
-                value: '5 所',
-                meta: '已添加追踪',
-                variant: StatChipVariant.warning,
-              ),
-            ),
-            SizedBox(width: 12),
-            Expanded(
-              child: StatChip(
-                label: '差距分析',
-                value: '6 分',
-                meta: '距目标院校',
-                variant: StatChipVariant.danger,
-              ),
-            ),
-          ],
-        ),
-      ],
+        );
+      },
     );
   }
 }
@@ -393,37 +446,87 @@ class _Badge extends StatelessWidget {
   }
 }
 
-class _ScoreOverview extends StatelessWidget {
+class _ScoreOverview extends StatefulWidget {
   const _ScoreOverview();
+
+  @override
+  State<_ScoreOverview> createState() => _ScoreOverviewState();
+}
+
+class _ScoreOverviewState extends State<_ScoreOverview> {
+  Future<Map<String, dynamic>> _getScore(BuildContext context) async {
+    final scope = AuthScope.of(context);
+    final userId = scope.session.user.userId;
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString('scores_$userId');
+    double? score;
+    int? rank;
+    double? topPercent;
+    if (raw != null && raw.isNotEmpty) {
+      try {
+        final list = (jsonDecode(raw) as List).cast<dynamic>();
+        for (final e in list) {
+          final m = e is Map<String, dynamic> ? e : null;
+          if (m == null) continue;
+          final mockName = m['MOCK_EXAM_NAME']?.toString() ?? '';
+          if (mockName.isNotEmpty) continue;
+          final scCandidates = [m['TOTAL_SCORE'], m['totalScore'], m['SCORE'], m['score'], m['SUM_SCORE'], m['sumScore']];
+          for (final c in scCandidates) {
+            final s = double.tryParse(c?.toString() ?? '');
+            if (s != null && s > 0 && s <= 750) { score = s; break; }
+          }
+          final rkCandidates = [m['RANK_IN_PROVINCE'], m['rankInProvince'], m['rank'], m['minRank'], m['provinceRank']];
+          for (final c in rkCandidates) {
+            final r = int.tryParse(c?.toString() ?? '');
+            if (r != null && r > 0) { rank = r; break; }
+          }
+          final tpCandidates = [m['TOP_PERCENT'], m['topPercent'], m['percentile']];
+          for (final c in tpCandidates) {
+            final t = double.tryParse(c?.toString() ?? '');
+            if (t != null && t > 0 && t <= 100) { topPercent = t; break; }
+          }
+          if (score != null || rank != null) break;
+        }
+      } catch (_) {}
+    }
+    final progress = score != null ? (score! / 750.0).clamp(0.0, 1.0) : 0.0;
+    return {'score': score, 'rank': rank, 'topPercent': topPercent, 'progress': progress};
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                '628',
-                style: theme.textTheme.displaySmall?.copyWith(
-                  fontWeight: FontWeight.w700,
-                  color: const Color(0xFF2C5BF0),
-                ),
+    return FutureBuilder<Map<String, dynamic>>(
+      future: _getScore(context),
+      builder: (context, snapshot) {
+        final data = snapshot.data ?? const {};
+        final s = (data['score'] as num?)?.toDouble();
+        final r = data['rank'] as int?;
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    s != null ? s.round().toString() : '-',
+                    style: theme.textTheme.displaySmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: const Color(0xFF2C5BF0),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '位次：${r != null ? r.toString() : '-'}',
+                    style: theme.textTheme.bodyMedium?.copyWith(color: const Color(0xFF7C8698)),
+                  ),
+                ],
               ),
-              const SizedBox(height: 8),
-              Text(
-                '位次：12,430\nTop 3.1%',
-                style: theme.textTheme.bodyMedium?.copyWith(color: const Color(0xFF7C8698)),
-              ),
-            ],
-          ),
-        ),
-        const _ProgressRing(percentage: 0.68),
-      ],
+            ),
+          ],
+        );
+      },
     );
   }
 }
@@ -475,67 +578,20 @@ class _ScoreTags extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: const [
-        TagChip(label: '目标地：长三角'),
-        TagChip(label: '专业：教育学'),
-        TagChip(label: '院校层次：985'),
-      ],
+    return const Wrap(
     );
   }
 }
 
-class _MessageBanner extends StatelessWidget {
-  const _MessageBanner();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: const Color(0x1400B8D4),
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Icon(Icons.info_rounded, size: 24, color: Color(0xFF00B8D4)),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '系统提示',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  '已为您匹配 28 所院校，建议合理分配"冲刺"、"稳妥"、"保底"院校比例，确保志愿填报安全。',
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-enum _StatusTagVariant { steady, risk, safe }
+enum _StatusTagVariant { steady, risk, safe, reference }
 
 class _GoalRow extends StatelessWidget {
   const _GoalRow({
     required this.title,
-    required this.subtitle,
     required this.variant,
   });
 
   final String title;
-  final String subtitle;
   final _StatusTagVariant variant;
 
   @override
@@ -553,10 +609,6 @@ class _GoalRow extends StatelessWidget {
                 style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
               ),
               const SizedBox(height: 4),
-              Text(
-                subtitle,
-                style: theme.textTheme.bodySmall?.copyWith(color: const Color(0xFF7C8698)),
-              ),
             ],
           ),
         ),
@@ -589,9 +641,14 @@ class _StatusTag extends StatelessWidget {
         label = '冲刺';
         break;
       case _StatusTagVariant.safe:
-        background = const Color(0x1421B573);
-        foreground = const Color(0xFF21B573);
-        label = '安全';
+        background = const Color(0x142C5BF0);
+        foreground = const Color(0xFF2C5BF0);
+        label = '保底';
+        break;
+      case _StatusTagVariant.reference:
+        background = const Color(0x147C8698);
+        foreground = const Color(0xFF7C8698);
+        label = '参考';
         break;
     }
 
@@ -677,18 +734,18 @@ class _RadarSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
+    return const Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const _ChartPlaceholder(
+        _ChartPlaceholder(
           label: '单科雷达图',
           icon: Icons.radar_rounded,
         ),
-        const SizedBox(height: 12),
+        SizedBox(height: 12),
         Wrap(
           spacing: 18,
           runSpacing: 8,
-          children: const [
+          children: [
             _LegendDot(label: '个人表现', color: Color(0xFF2C5BF0)),
             _LegendDot(label: '满分参考', color: Color(0xFF7C8698), faded: true),
           ],

@@ -10,7 +10,7 @@ class ProfileNotificationPage extends StatefulWidget {
 
 class _ProfileNotificationPageState extends State<ProfileNotificationPage> {
   bool _heatAlert = true;
-  bool _scoreUpdate = true;
+
   bool _recommendChange = true;
   bool _collaboratorComment = false;
   bool _systemMessage = true;
@@ -46,15 +46,7 @@ class _ProfileNotificationPageState extends State<ProfileNotificationPage> {
                     onChanged: (value) => setState(() => _heatAlert = value),
                   ),
                   const Divider(height: 24),
-                  _NotificationToggle(
-                    icon: Icons.grade_rounded,
-                    title: '成绩更新提醒',
-                    subtitle: '新成绩录入后推送通知',
-                    value: _scoreUpdate,
-                    color: const Color(0xFF2C5BF0),
-                    onChanged: (value) => setState(() => _scoreUpdate = value),
-                  ),
-                  const Divider(height: 24),
+
                   _NotificationToggle(
                     icon: Icons.auto_awesome_rounded,
                     title: '推荐院校变化通知',
@@ -62,15 +54,6 @@ class _ProfileNotificationPageState extends State<ProfileNotificationPage> {
                     value: _recommendChange,
                     color: const Color(0xFFFF9500),
                     onChanged: (value) => setState(() => _recommendChange = value),
-                  ),
-                  const Divider(height: 24),
-                  _NotificationToggle(
-                    icon: Icons.chat_bubble_outline_rounded,
-                    title: '协作者评论通知',
-                    subtitle: '家长或老师添加备注时提醒',
-                    value: _collaboratorComment,
-                    color: const Color(0xFF21B573),
-                    onChanged: (value) => setState(() => _collaboratorComment = value),
                   ),
                   const Divider(height: 24),
                   _NotificationToggle(
@@ -84,25 +67,7 @@ class _ProfileNotificationPageState extends State<ProfileNotificationPage> {
                 ],
               ),
             ),
-            const SizedBox(height: 20),
-            SectionCard(
-              title: '通知时段',
-              subtitle: '设置接收通知的时间',
-              child: Column(
-                children: [
-                  _TimePeriodSelector(
-                    label: '免打扰时段',
-                    startTime: '22:00',
-                    endTime: '07:00',
-                    onTap: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('时间选择功能开发中')),
-                      );
-                    },
-                  ),
-                ],
-              ),
-            ),
+
           ],
         ),
       ),
@@ -168,69 +133,6 @@ class _NotificationToggle extends StatelessWidget {
           onChanged: onChanged,
         ),
       ],
-    );
-  }
-}
-
-class _TimePeriodSelector extends StatelessWidget {
-  const _TimePeriodSelector({
-    required this.label,
-    required this.startTime,
-    required this.endTime,
-    required this.onTap,
-  });
-
-  final String label;
-  final String startTime;
-  final String endTime;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(16),
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: const Color(0xFFF5F7FB),
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: Row(
-          children: [
-            const Icon(Icons.access_time_rounded, color: Color(0xFF2C5BF0)),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    label,
-                    style: theme.textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    '$startTime - $endTime',
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: const Color(0xFF2C5BF0),
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const Icon(
-              Icons.arrow_forward_ios_rounded,
-              size: 16,
-              color: Color(0xFF7C8698),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }

@@ -12,11 +12,15 @@ class AuthUser {
   final String? schoolName;
 
   factory AuthUser.fromJson(Map<String, dynamic> json) {
+    final userId = (json['userId'] ?? json['USER_ID'])?.toString() ?? '';
+    final username = (json['username'] ?? json['USERNAME'])?.toString() ?? '';
+    final province = (json['province'] ?? json['PROVINCE'])?.toString();
+    final schoolName = (json['schoolName'] ?? json['SCHOOL_NAME'])?.toString();
     return AuthUser(
-      userId: json['userId']?.toString() ?? '',
-      username: json['username']?.toString() ?? '',
-      province: json['province'] as String?,
-      schoolName: json['schoolName']?.toString(),
+      userId: userId,
+      username: username,
+      province: province,
+      schoolName: schoolName,
     );
   }
 }

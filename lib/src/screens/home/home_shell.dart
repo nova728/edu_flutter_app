@@ -11,10 +11,16 @@ import 'pages/recommend_page.dart';
 import 'pages/favorite_colleges_page.dart'; 
 
 class HomeShell extends StatefulWidget {
-  const HomeShell({required this.session, required this.onSignOut, super.key});
+  const HomeShell({
+    required this.session,
+    required this.onSignOut,
+    required this.onUpdateUser,
+    super.key,
+  });
 
   final AuthSession session;
   final VoidCallback onSignOut;
+  final ValueChanged<AuthUser> onUpdateUser;
 
   @override
   State<HomeShell> createState() => _HomeShellState();
@@ -22,6 +28,7 @@ class HomeShell extends StatefulWidget {
 
 class _HomeShellState extends State<HomeShell> {
   int _index = 2;
+  final GlobalKey<RecommendPageState> _recommendKey = GlobalKey<RecommendPageState>();
   late final List<_HomeDestination> _destinations;
 
   @override
@@ -41,7 +48,8 @@ class _HomeShellState extends State<HomeShell> {
         label: '推荐',
         icon: Icons.track_changes_rounded,
         builder: (context) => RecommendPage(
-          onViewCollege: (collegeCode) => _navigateTo(3), // 传递院校代码
+          key: _recommendKey,
+          onViewCollege: (collegeCode) => _navigateTo(3),
         ),
       ),
       _HomeDestination(
@@ -64,7 +72,6 @@ class _HomeShellState extends State<HomeShell> {
         label: '我的',
         icon: Icons.person_rounded,
         builder: (context) => ProfilePage(
-          user: widget.session.user,
           onSignOut: widget.onSignOut,
           onEditProfile: () => _navigateTo(0),
           onAdjustWeights: () => _navigateTo(1),
@@ -97,54 +104,50 @@ class _HomeShellState extends State<HomeShell> {
   Widget build(BuildContext context) {
     final destination = _destinations[_index];
 
-    return AuthScope(
-      session: widget.session,
-      onSignOut: widget.onSignOut,
-      child: Scaffold(
-        backgroundColor: const Color(0xFFEFF3FF),
-        body: SafeArea(
-          bottom: false,
-          child: Stack(
-            children: [
-              Column(
-                children: [
-                  Expanded(
-                    child: Container(
-                      decoration: const BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [Color(0xFFEFF3FF), Color(0xFFFAFBFF)],
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                        ),
+    return Scaffold(
+      backgroundColor: const Color(0xFFEFF3FF),
+      body: SafeArea(
+        bottom: false,
+        child: Stack(
+          children: [
+            Column(
+              children: [
+                Expanded(
+                  child: Container(
+                    decoration: const BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [Color(0xFFEFF3FF), Color(0xFFFAFBFF)],
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
                       ),
-                      child: AnimatedSwitcher(
-                        duration: const Duration(milliseconds: 250),
-                        child: KeyedSubtree(
-                          key: ValueKey(destination.label),
-                          child: destination.builder(context),
-                        ),
+                    ),
+                    child: AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 250),
+                      child: KeyedSubtree(
+                        key: ValueKey(destination.label),
+                        child: destination.builder(context),
                       ),
                     ),
                   ),
-                ],
-              ),
-              Positioned(
-                right: 24,
-                bottom: 108, // 从 92 调整到 108，向上移动 16px
-                child: _FloatingAction(currentIndex: _index, onNavigate: _navigateTo),
-              ),
-              Positioned(
-                left: 0,
-                right: 0,
-                bottom: 0,
-                child: _BottomNavBar(
-                  items: _destinations,
-                  currentIndex: _index,
-                  onChanged: _onDestinationSelected,
                 ),
+              ],
+            ),
+            Positioned(
+              right: 24,
+              bottom: 108, // 从 92 调整到 108，向上移动 16px
+              child: _FloatingAction(currentIndex: _index, onNavigate: _navigateTo, recommendKey: _recommendKey),
+            ),
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: _BottomNavBar(
+                items: _destinations,
+                currentIndex: _index,
+                onChanged: _onDestinationSelected,
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
@@ -164,10 +167,11 @@ class _HomeDestination {
 }
 
 class _FloatingAction extends StatelessWidget {
-  const _FloatingAction({required this.currentIndex, required this.onNavigate});
+  const _FloatingAction({required this.currentIndex, required this.onNavigate, this.recommendKey});
 
   final int currentIndex;
   final ValueChanged<int> onNavigate;
+  final GlobalKey<RecommendPageState>? recommendKey;
 
   @override
   Widget build(BuildContext context) {
@@ -183,16 +187,23 @@ class _FloatingAction extends StatelessWidget {
         action = () => _showScoreInputDialog(context);
         break;
       case 1: // 推荐页
-        tooltip = '生成推荐方案';
-        icon = Icons.auto_awesome_rounded;
-        action = () => _generateRecommendations(context);
+        tooltip = '保存推荐方案';
+        icon = Icons.save_rounded;
+        action = () {
+          final state = recommendKey?.currentState;
+          if (state != null) {
+            state.saveRecommendationPlan();
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('页面未就绪，稍后再试')));
+          }
+        };
         break;
-      case 3: // 收藏功能
+      case 2: // 收藏功能
         tooltip = '我的收藏';
         icon = Icons.favorite_rounded;
         action = () => _openFavoritesPage(context);
         break;
-      default: // 首页、我的页
+      default: // 我的和院校页
         return const SizedBox.shrink();
     }
 

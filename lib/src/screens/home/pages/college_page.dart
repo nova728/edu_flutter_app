@@ -4,6 +4,8 @@ import 'package:zygc_flutter_prototype/src/state/auth_scope.dart';
 import 'package:zygc_flutter_prototype/src/services/api_client.dart';
 import 'package:zygc_flutter_prototype/src/widgets/section_card.dart';
 import 'favorite_colleges_page.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:convert';
 
 class CollegePage extends StatefulWidget {
   const CollegePage({super.key});
@@ -14,11 +16,11 @@ class CollegePage extends StatefulWidget {
 
 class _CollegePageState extends State<CollegePage> with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  
+
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 2, vsync: this);
   }
 
   @override
@@ -26,6 +28,7 @@ class _CollegePageState extends State<CollegePage> with SingleTickerProviderStat
     _tabController.dispose();
     super.dispose();
   }
+
 
   @override
   Widget build(BuildContext context) {
@@ -48,7 +51,6 @@ class _CollegePageState extends State<CollegePage> with SingleTickerProviderStat
             tabs: const [
               Tab(text: '全国院校'),
               Tab(text: '高中录取'),
-              Tab(text: '我的对比'),
             ],
           ),
         ),
@@ -58,7 +60,6 @@ class _CollegePageState extends State<CollegePage> with SingleTickerProviderStat
             children: const [
               _CollegeLibraryTab(),
               _SchoolRecordsTab(),
-              _ComparisonTab(),
             ],
           ),
         ),
@@ -88,6 +89,8 @@ class _CollegeLibraryTabState extends State<_CollegeLibraryTab> {
   
   String? _selectedProvince;
   bool _only985 = false;
+  bool _only211 = false;
+  bool _onlyDFC = false;
   bool _showFilters = false;
 
   // 添加收藏集合
@@ -120,6 +123,23 @@ class _CollegeLibraryTabState extends State<_CollegeLibraryTab> {
     super.dispose();
   }
 
+  Future<Set<String>> _getFavoriteNames() async {
+    final scope = AuthScope.of(context);
+    final key = 'favorites_${scope.session.user.userId}';
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(key);
+    if (raw == null || raw.isEmpty) return {};
+    try {
+      final list = (jsonDecode(raw) as List).cast<Map<String, dynamic>>();
+      return list
+          .map((e) => e['name']?.toString() ?? '')
+          .where((n) => n.isNotEmpty)
+          .toSet();
+    } catch (_) {
+      return {};
+    }
+  }
+
   // 搜索框内容变化时的回调
   void _onSearchChanged() {
     // 使用防抖，避免频繁请求
@@ -138,7 +158,8 @@ class _CollegeLibraryTabState extends State<_CollegeLibraryTab> {
 
   Future<void> _loadColleges({bool reset = false}) async {
     if (_isLoading) return;
-    
+    if (!mounted) return;
+
     setState(() {
       _isLoading = true;
       if (reset) {
@@ -165,6 +186,8 @@ class _CollegeLibraryTabState extends State<_CollegeLibraryTab> {
       }
       
       if (_only985) query['is985'] = '1';
+      if (_only211) query['is211'] = '1';
+      if (_onlyDFC) query['isDFC'] = '1';
 
       final response = await _client.get('/colleges', query: query);
       var rows = response['data'] as List? ?? const [];
@@ -181,22 +204,27 @@ class _CollegeLibraryTabState extends State<_CollegeLibraryTab> {
       }
 
       final newColleges = rows.map((e) => CollegeSummary.fromJson(e as Map<String, dynamic>)).toList();
-      
+      final favoriteNames = await _getFavoriteNames();
+      final newlyFavIds = newColleges
+          .where((c) => favoriteNames.contains(c.collegeName))
+          .map((c) => c.collegeCode);
+
+      if (!mounted) return;
       setState(() {
+        _favoriteCollegeIds.addAll(newlyFavIds);
         _colleges.addAll(newColleges);
         _currentPage++;
         _hasMore = newColleges.length >= _pageSize;
         _isLoading = false;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _isLoading = false;
       });
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('加载失败：$e')),
-        );
-      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('加载失败：$e')),
+      );
     }
   }
 
@@ -244,7 +272,8 @@ class _CollegeLibraryTabState extends State<_CollegeLibraryTab> {
           summary: summary,
           detailData: data,
           client: _client,
-          token: token, // 传递 token
+          token: token,
+          userProvince: scope.session.user.province,
         ),
       );
     } catch (e) {
@@ -255,29 +284,28 @@ class _CollegeLibraryTabState extends State<_CollegeLibraryTab> {
     }
   }
 
-  void _toggleFavorite(int collegeId, String collegeName) {
+  Future<void> _toggleFavorite(int collegeId, String collegeName) async {
     setState(() {
       if (_favoriteCollegeIds.contains(collegeId)) {
         _favoriteCollegeIds.remove(collegeId);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('已取消收藏 $collegeName'),
-            duration: const Duration(seconds: 2),
-          ),
+          SnackBar(content: Text('已取消收藏 $collegeName'), duration: const Duration(seconds: 2)),
         );
       } else {
         _favoriteCollegeIds.add(collegeId);
-        ScaffoldMessenger.of(context).showSnackBar(
+        final messenger = ScaffoldMessenger.maybeOf(context);
+        messenger?.clearSnackBars();
+        messenger?.showSnackBar(
           SnackBar(
             content: Text('已收藏 $collegeName'),
             duration: const Duration(seconds: 2),
             action: SnackBarAction(
               label: '查看',
               onPressed: () {
+                messenger?.hideCurrentSnackBar();
+                if (!mounted) return;
                 Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => const FavoriteCollegesPage(),
-                  ),
+                  MaterialPageRoute(builder: (_) => const FavoriteCollegesPage()),
                 );
               },
             ),
@@ -285,6 +313,25 @@ class _CollegeLibraryTabState extends State<_CollegeLibraryTab> {
         );
       }
     });
+    final scope = AuthScope.of(context);
+    final key = 'favorites_${scope.session.user.userId}';
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(key);
+    final list = raw == null || raw.isEmpty ? <dynamic>[] : (jsonDecode(raw) as List);
+    if (_favoriteCollegeIds.contains(collegeId)) {
+      if (!list.any((e) => (e['name'] ?? '') == collegeName)) {
+        list.insert(0, {
+          'name': collegeName,
+          'location': '',
+          'tags': [],
+          'addedDate': DateTime.now().toString(),
+          'notes': '',
+        });
+      }
+    } else {
+      list.removeWhere((e) => (e['name'] ?? '') == collegeName);
+    }
+    await prefs.setString(key, jsonEncode(list));
   }
 
   @override
@@ -392,6 +439,28 @@ class _CollegeLibraryTabState extends State<_CollegeLibraryTab> {
                         },
                       ),
                       const SizedBox(height: 12),
+                      SwitchListTile.adaptive(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('仅显示 211 院校'),
+                        value: _only211,
+                        onChanged: (value) {
+                          setState(() {
+                            _only211 = value;
+                          });
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      SwitchListTile.adaptive(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('仅显示 双一流 院校'),
+                        value: _onlyDFC,
+                        onChanged: (value) {
+                          setState(() {
+                            _onlyDFC = value;
+                          });
+                        },
+                      ),
+                      const SizedBox(height: 12),
                       Row(
                         children: [
                           Expanded(
@@ -407,6 +476,8 @@ class _CollegeLibraryTabState extends State<_CollegeLibraryTab> {
                                 setState(() {
                                   _selectedProvince = null;
                                   _only985 = false;
+                                  _only211 = false;
+                                  _onlyDFC = false;
                                 });
                                 _loadColleges(reset: true);
                               },
@@ -464,12 +535,7 @@ class _CollegeLibraryTabState extends State<_CollegeLibraryTab> {
                     padding: const EdgeInsets.only(bottom: 12),
                     child: _CollegeCard(
                       college: college,
-                      isFavorite: _favoriteCollegeIds.contains(college.collegeCode),
                       onTap: () => _openCollegeDetail(college),
-                      onFavoriteToggle: () => _toggleFavorite(
-                        college.collegeCode,
-                        college.collegeName,
-                      ),
                     ),
                   );
                 },
@@ -502,17 +568,19 @@ class _SchoolRecordsTabState extends State<_SchoolRecordsTab> {
     if (_initialized) return;
     final scope = AuthScope.of(context);
     _token = scope.session.token;
-    _schoolController.text = scope.session.user.schoolName ?? '';
     _recordsFuture = _fetchRecords();
     _initialized = true;
   }
 
   Future<List<SchoolEnrollmentRecord>> _fetchRecords() async {
-    final schoolName = _schoolController.text.trim();
-    if (_token == null || _token!.isEmpty || schoolName.isEmpty) {
+    if (_token == null || _token!.isEmpty) {
       return const [];
     }
-    final query = {'schoolName': schoolName};
+    final query = <String, String>{};
+    final collegeName = _schoolController.text.trim();
+    if (collegeName.isNotEmpty) {
+      query['schoolName'] = collegeName;
+    }
     final yearText = _yearController.text.trim();
     if (yearText.isNotEmpty) {
       final year = int.tryParse(yearText);
@@ -548,8 +616,8 @@ class _SchoolRecordsTabState extends State<_SchoolRecordsTab> {
                 TextField(
                   controller: _schoolController,
                   decoration: const InputDecoration(
-                    labelText: '学校名称',
-                    hintText: '输入学校名称（必填）',
+                    labelText: '院校名称（可选）',
+                    hintText: '不填则查询全部院校记录',
                     prefixIcon: Icon(Icons.school_rounded),
                   ),
                 ),
@@ -635,66 +703,15 @@ class _SchoolRecordsTabState extends State<_SchoolRecordsTab> {
   }
 }
 
-// 对比列表标签页
-class _ComparisonTab extends StatelessWidget {
-  const _ComparisonTab();
-
-  @override
-  Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        children: [
-          _CompareCard(
-            title: '师范类院校对比',
-            colleges: ['华东师范大学', '南京师范大学'],
-            onTap: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('对比详情功能开发中')),
-              );
-            },
-          ),
-          const SizedBox(height: 16),
-          _CompareCard(
-            title: '综合类院校对比',
-            colleges: ['浙江大学', '上海交通大学'],
-            onTap: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('对比详情功能开发中')),
-              );
-            },
-          ),
-          const SizedBox(height: 24),
-          OutlinedButton.icon(
-            onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('新建对比功能开发中')),
-              );
-            },
-            icon: const Icon(Icons.add_rounded),
-            label: const Text('新建对比'),
-            style: OutlinedButton.styleFrom(
-              minimumSize: const Size.fromHeight(48),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
 
 class _CollegeCard extends StatelessWidget {
   const _CollegeCard({
     required this.college,
-    required this.isFavorite,
     this.onTap,
-    required this.onFavoriteToggle,
   });
 
   final CollegeSummary college;
-  final bool isFavorite;
   final VoidCallback? onTap;
-  final VoidCallback onFavoriteToggle;
 
   @override
   Widget build(BuildContext context) {
@@ -724,23 +741,6 @@ class _CollegeCard extends StatelessWidget {
                       style: theme.textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.w600,
                       ),
-                    ),
-                  ),
-                  // 收藏按钮带动画效果
-                  AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    child: IconButton(
-                      icon: Icon(
-                        isFavorite 
-                          ? Icons.favorite_rounded 
-                          : Icons.favorite_border_rounded,
-                      ),
-                      onPressed: onFavoriteToggle,
-                      color: isFavorite 
-                        ? const Color(0xFFF04F52) 
-                        : const Color(0xFF7C8698),
-                      iconSize: 20,
-                      splashRadius: 24,
                     ),
                   ),
                   const Icon(Icons.arrow_forward_ios_rounded, size: 16),
@@ -803,67 +803,6 @@ class _RecordCard extends StatelessWidget {
   }
 }
 
-class _CompareCard extends StatelessWidget {
-  const _CompareCard({
-    required this.title,
-    required this.colleges,
-    required this.onTap,
-  });
-
-  final String title;
-  final List<String> colleges;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    return Material(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(20),
-      elevation: 0,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(20),
-        child: Container(
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            border: Border.all(color: const Color(0xFFE8ECF4)),
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  const Icon(Icons.compare_arrows_rounded, color: Color(0xFF2C5BF0)),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      title,
-                      style: theme.textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                  const Icon(Icons.arrow_forward_ios_rounded, size: 16),
-                ],
-              ),
-              const SizedBox(height: 12),
-              ...colleges.map((college) => Padding(
-                padding: const EdgeInsets.only(bottom: 6),
-                child: Text(
-                  '• $college',
-                  style: theme.textTheme.bodyMedium,
-                ),
-              )),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
 
 class _Tag extends StatelessWidget {
   const _Tag({required this.label, required this.color});
@@ -1021,13 +960,15 @@ class _CollegeDetailSheet extends StatefulWidget {
     required this.summary,
     required this.detailData,
     required this.client,
-    required this.token, 
+    required this.token,
+    this.userProvince,
   });
 
   final CollegeSummary summary;
   final Map<String, dynamic> detailData;
   final ApiClient client;
-  final String token; 
+  final String token;
+  final String? userProvince; 
 
   @override
   State<_CollegeDetailSheet> createState() => _CollegeDetailSheetState();
@@ -1035,11 +976,27 @@ class _CollegeDetailSheet extends StatefulWidget {
 
 class _CollegeDetailSheetState extends State<_CollegeDetailSheet>
     with SingleTickerProviderStateMixin {
+
   late TabController _tabController;
   List<AdmissionRecord>? _admissionRecords;
   bool _isLoadingAdmissions = false;
   String? _selectedProvince;
   int? _selectedYear;
+  bool _provinceInitialized = false;
+  bool _isFavorite = false;
+  String _normalizeProvinceShort(String input) {
+    var result = input.trim();
+    const suffixes = [
+      '特别行政区', '维吾尔自治区', '壮族自治区', '回族自治区', '自治区', '省', '市'
+    ];
+    for (final s in suffixes) {
+      if (result.endsWith(s)) {
+        result = result.substring(0, result.length - s.length);
+        break;
+      }
+    }
+    return result;
+  }
 
   // 完整的省份列表
   static const List<String> _provinces = [
@@ -1067,6 +1024,62 @@ class _CollegeDetailSheetState extends State<_CollegeDetailSheet>
   void dispose() {
     _tabController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadFavoriteState() async {
+    final scope = AuthScope.of(context);
+    final key = 'favorites_${scope.session.user.userId}';
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(key);
+    if (raw == null || raw.isEmpty) {
+      if (!mounted) return;
+      setState(() { _isFavorite = false; });
+      return;
+    }
+    try {
+      final list = (jsonDecode(raw) as List).cast<Map<String, dynamic>>();
+      final name = widget.summary.collegeName;
+      final exists = list.any((e) => (e['name'] ?? '') == name);
+      if (!mounted) return;
+      setState(() { _isFavorite = exists; });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() { _isFavorite = false; });
+    }
+  }
+
+  Future<void> _toggleFavoriteInDetail() async {
+    final scope = AuthScope.of(context);
+    final key = 'favorites_${scope.session.user.userId}';
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(key);
+    final name = widget.summary.collegeName;
+    final list = raw == null || raw.isEmpty ? <dynamic>[] : (jsonDecode(raw) as List);
+    if (_isFavorite) {
+      list.removeWhere((e) => (e['name'] ?? '') == name);
+      await prefs.setString(key, jsonEncode(list));
+      if (mounted) {
+        setState(() { _isFavorite = false; });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('已取消收藏 $name')),
+        );
+      }
+    } else {
+      list.insert(0, {
+        'name': name,
+        'location': widget.detailData['PROVINCE']?.toString() ?? '',
+        'tags': [],
+        'addedDate': DateTime.now().toString(),
+        'notes': '',
+      });
+      await prefs.setString(key, jsonEncode(list));
+      if (mounted) {
+        setState(() { _isFavorite = true; });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('已收藏 $name')),
+        );
+      }
+    }
   }
 
   Future<void> _loadAdmissionRecords() async {
@@ -1113,6 +1126,21 @@ class _CollegeDetailSheetState extends State<_CollegeDetailSheet>
       }
     }
   }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_provinceInitialized) return;
+    final prov = widget.userProvince;
+    if (prov != null && prov.isNotEmpty) {
+      final short = _normalizeProvinceShort(prov);
+      if (_provinces.contains(short)) {
+        _selectedProvince = short;
+      }
+    }
+    _provinceInitialized = true;
+  }
+
 
   @override
   Widget build(BuildContext context) {
@@ -1237,30 +1265,7 @@ class _CollegeDetailSheetState extends State<_CollegeDetailSheet>
                         ].join(' · '),
                       ),
                       const SizedBox(height: 24),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              onPressed: () => Navigator.of(context).pop(),
-                              icon: const Icon(Icons.favorite_border_rounded),
-                              label: const Text('收藏'),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: FilledButton.icon(
-                              onPressed: () {
-                                Navigator.of(context).pop();
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('已加入对比列表')),
-                                );
-                              },
-                              icon: const Icon(Icons.compare_arrows_rounded),
-                              label: const Text('加入对比'),
-                            ),
-                          ),
-                        ],
-                      ),
+                      const SizedBox.shrink(),
                     ],
                   ),
 
@@ -1339,7 +1344,7 @@ class _CollegeDetailSheetState extends State<_CollegeDetailSheet>
                                         child: Text('全部'),
                                       ),
                                       for (int year = DateTime.now().year - 1;
-                                          year >= 2018;
+                                          year >= 2017;
                                           year--)
                                         DropdownMenuItem(
                                           value: year,

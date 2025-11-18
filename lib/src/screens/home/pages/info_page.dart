@@ -5,8 +5,8 @@ import 'package:zygc_flutter_prototype/src/services/api_client.dart';
 import 'package:zygc_flutter_prototype/src/models/auth_models.dart';
 
 import 'package:zygc_flutter_prototype/src/widgets/section_card.dart';
-import 'package:zygc_flutter_prototype/src/widgets/tag_chip.dart';
-import 'analysis_page.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:convert';
 
 class InfoPage extends StatefulWidget {
   const InfoPage({
@@ -33,14 +33,11 @@ class _InfoPageState extends State<InfoPage> {
   final _formKey = GlobalKey<FormState>();
 
   // 表单状态
-  int _selectedCategory = 0; // 0=普通类, 1=艺术类, 2=高职, 3=自招
-  bool _isNewGaokao = true; // true=新高考, false=旧高考
-  String _examType = '高考成绩';
-  bool _isBachelor = true;
-  
+  bool _isNewGaokao = false; // true=新高考, false=旧高考
+
   // 旧高考：文理科选择
   bool _isScience = true; // true=理科, false=文科
-  
+
   // 新高考：选考科目
   final Set<String> _selectedSubjects = {};
   final Map<String, TextEditingController> _subjectScoreControllers = {
@@ -51,18 +48,22 @@ class _InfoPageState extends State<InfoPage> {
     '历史': TextEditingController(),
     '地理': TextEditingController(),
   };
-  
+
   // 基础成绩
   final TextEditingController _totalScoreController = TextEditingController();
   final TextEditingController _rankController = TextEditingController();
   final TextEditingController _chineseController = TextEditingController();
   final TextEditingController _mathController = TextEditingController();
   final TextEditingController _englishController = TextEditingController();
-  
+
   // 旧高考：文综/理综
-  final TextEditingController _comprehensiveController = TextEditingController();
-  
+  final TextEditingController _comprehensiveController =
+      TextEditingController();
+
   final TextEditingController _schoolController = TextEditingController();
+  bool _isExamGaokao = true;
+  int _examYear = DateTime.now().year;
+  final TextEditingController _mockExamNameController = TextEditingController();
 
   // 本地存储的成绩记录
   List<StudentScore> _localScores = [];
@@ -75,7 +76,7 @@ class _InfoPageState extends State<InfoPage> {
     _mathController.addListener(_calculateTotalScore);
     _englishController.addListener(_calculateTotalScore);
     _comprehensiveController.addListener(_calculateTotalScore);
-    
+
     // 为每个选考科目添加监听
     _subjectScoreControllers.forEach((subject, controller) {
       controller.addListener(_calculateTotalScore);
@@ -89,7 +90,8 @@ class _InfoPageState extends State<InfoPage> {
     final scope = AuthScope.of(context);
     _session = scope.session;
     _initialized = true;
-    
+    _loadLocalScores();
+
     // 加载用户学校信息
     _schoolController.text = _session.user.schoolName ?? '';
   }
@@ -99,13 +101,14 @@ class _InfoPageState extends State<InfoPage> {
     final chinese = int.tryParse(_chineseController.text) ?? 0;
     final math = int.tryParse(_mathController.text) ?? 0;
     final english = int.tryParse(_englishController.text) ?? 0;
-    
+
     int total = chinese + math + english;
-    
+
     if (_isNewGaokao) {
       // 新高考：累加选考科目成绩
       _selectedSubjects.forEach((subject) {
-        final score = int.tryParse(_subjectScoreControllers[subject]?.text ?? '') ?? 0;
+        final score =
+            int.tryParse(_subjectScoreControllers[subject]?.text ?? '') ?? 0;
         total += score;
       });
     } else {
@@ -113,7 +116,7 @@ class _InfoPageState extends State<InfoPage> {
       final comprehensive = int.tryParse(_comprehensiveController.text) ?? 0;
       total += comprehensive;
     }
-    
+
     if (total > 0) {
       _totalScoreController.text = total.toString();
     }
@@ -128,8 +131,32 @@ class _InfoPageState extends State<InfoPage> {
     _englishController.dispose();
     _comprehensiveController.dispose();
     _schoolController.dispose();
+    _mockExamNameController.dispose();
     _subjectScoreControllers.forEach((_, controller) => controller.dispose());
     super.dispose();
+  }
+
+  String get _scoresStorageKey => 'scores_${_session.user.userId}';
+
+  Future<void> _loadLocalScores() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_scoresStorageKey);
+    if (raw == null || raw.isEmpty) return;
+    try {
+      final List<dynamic> list = jsonDecode(raw);
+      final scores = list
+          .map((e) => StudentScore.fromJson(e as Map<String, dynamic>))
+          .toList();
+      setState(() {
+        _localScores = scores;
+      });
+    } catch (_) {}
+  }
+
+  Future<void> _saveLocalScores() async {
+    final prefs = await SharedPreferences.getInstance();
+    final list = _localScores.map((e) => e.toJson()).toList();
+    await prefs.setString(_scoresStorageKey, jsonEncode(list));
   }
 
   /// 切换高考类型
@@ -166,15 +193,8 @@ class _InfoPageState extends State<InfoPage> {
 
   /// 表单验证
   bool _validateForm() {
-    // 验证总分和位次
-    if (_totalScoreController.text.isEmpty || _rankController.text.isEmpty) {
-      _showWarning('请填写总分和位次');
-      return false;
-    }
-
-    final totalScore = int.tryParse(_totalScoreController.text);
-    if (totalScore == null || totalScore < 0 || totalScore > 750) {
-      _showWarning('总分应在 0-750 之间');
+    if (_chineseController.text.isEmpty || _mathController.text.isEmpty || _englishController.text.isEmpty) {
+      _showWarning('请填写语文、数学、英语成绩');
       return false;
     }
 
@@ -185,13 +205,10 @@ class _InfoPageState extends State<InfoPage> {
     }
 
     if (_isNewGaokao) {
-      // 新高考验证
       if (_selectedSubjects.length != 3) {
         _showWarning('请选择3门选考科目');
         return false;
       }
-
-      // 验证选考科目成绩
       for (var subject in _selectedSubjects) {
         final scoreText = _subjectScoreControllers[subject]?.text ?? '';
         if (scoreText.isEmpty) {
@@ -205,7 +222,6 @@ class _InfoPageState extends State<InfoPage> {
         }
       }
     } else {
-      // 旧高考验证
       if (_comprehensiveController.text.isEmpty) {
         _showWarning('请填写${_isScience ? "理综" : "文综"}成绩');
         return false;
@@ -241,7 +257,12 @@ class _InfoPageState extends State<InfoPage> {
         return false;
       }
     }
-
+    if (!_isExamGaokao) {
+      if (_mockExamNameController.text.trim().isEmpty) {
+        _showWarning('请填写模拟考名称');
+        return false;
+      }
+    }
     return true;
   }
 
@@ -259,12 +280,17 @@ class _InfoPageState extends State<InfoPage> {
     Future.delayed(const Duration(milliseconds: 500), () {
       try {
         // 构建成绩数据
-        final categoryMap = ['普通类', '艺术类', '高职', '自招'];
-        
+
         Map<String, dynamic> scoreDetails = {
-          '语文': _chineseController.text.isEmpty ? null : int.parse(_chineseController.text),
-          '数学': _mathController.text.isEmpty ? null : int.parse(_mathController.text),
-          '英语': _englishController.text.isEmpty ? null : int.parse(_englishController.text),
+          '语文': _chineseController.text.isEmpty
+              ? null
+              : int.parse(_chineseController.text),
+          '数学': _mathController.text.isEmpty
+              ? null
+              : int.parse(_mathController.text),
+          '英语': _englishController.text.isEmpty
+              ? null
+              : int.parse(_englishController.text),
         };
 
         String examMode;
@@ -272,28 +298,28 @@ class _InfoPageState extends State<InfoPage> {
           examMode = '新高考(3+3)';
           // 添加选考科目成绩
           _selectedSubjects.forEach((subject) {
-            scoreDetails[subject] = int.parse(_subjectScoreControllers[subject]?.text ?? '0');
+            scoreDetails[subject] =
+                int.parse(_subjectScoreControllers[subject]?.text ?? '0');
           });
         } else {
           examMode = _isScience ? '旧高考(理科)' : '旧高考(文科)';
-          scoreDetails[_isScience ? '理综' : '文综'] = 
+          scoreDetails[_isScience ? '理综' : '文综'] =
               int.parse(_comprehensiveController.text);
         }
 
         // 创建新的成绩记录
         final newScore = StudentScore(
           id: DateTime.now().millisecondsSinceEpoch.toString(),
-          examYear: DateTime.now().year,
+          examYear: _isExamGaokao ? _examYear : DateTime.now().year,
           totalScore: int.parse(_totalScoreController.text),
           province: _session.user.province ?? '未设置',
           rankInProvince: int.parse(_rankController.text),
-          category: categoryMap[_selectedCategory],
           examMode: examMode,
-          degreeType: _isBachelor ? '本科' : '专科',
           scoreDetails: scoreDetails,
           selectedSubjects: _isNewGaokao ? _selectedSubjects.toList() : null,
           schoolName: _schoolController.text,
           createdAt: DateTime.now().toString(),
+          mockExamName: _isExamGaokao ? null : _mockExamNameController.text.trim(),
         );
 
         setState(() {
@@ -301,6 +327,7 @@ class _InfoPageState extends State<InfoPage> {
           _isSubmitting = false;
         });
 
+        _saveLocalScores();
         _showSuccess('成绩信息保存成功！');
         _resetForm();
       } catch (e) {
@@ -324,6 +351,7 @@ class _InfoPageState extends State<InfoPage> {
     setState(() {
       _localScores.removeWhere((score) => score.id == scoreId);
     });
+    _saveLocalScores();
     _showSuccess('删除成功');
   }
 
@@ -338,8 +366,6 @@ class _InfoPageState extends State<InfoPage> {
     _subjectScoreControllers.forEach((_, controller) => controller.clear());
     setState(() {
       _selectedSubjects.clear();
-      _selectedCategory = 0;
-      _isBachelor = true;
     });
   }
 
@@ -411,10 +437,11 @@ class _InfoPageState extends State<InfoPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             SectionCard(
-              title: '完善高考信息',
+              title: '完善考试信息',
               subtitle: '补全信息，提升推荐准确度',
               trailing: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 decoration: BoxDecoration(
                   color: const Color(0x142C5BF0),
                   borderRadius: BorderRadius.circular(999),
@@ -431,38 +458,7 @@ class _InfoPageState extends State<InfoPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // 分类标签
-                  Container(
-                    padding: const EdgeInsets.all(6),
-                    decoration: BoxDecoration(
-                      color: const Color(0x0F2C5BF0),
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: Row(
-                      children: [
-                        _CategoryTab(
-                          label: '普通类',
-                          isSelected: _selectedCategory == 0,
-                          onTap: () => setState(() => _selectedCategory = 0),
-                        ),
-                        _CategoryTab(
-                          label: '艺术类',
-                          isSelected: _selectedCategory == 1,
-                          onTap: () => setState(() => _selectedCategory = 1),
-                        ),
-                        _CategoryTab(
-                          label: '高职',
-                          isSelected: _selectedCategory == 2,
-                          onTap: () => setState(() => _selectedCategory = 2),
-                        ),
-                        _CategoryTab(
-                          label: '自招',
-                          isSelected: _selectedCategory == 3,
-                          onTap: () => setState(() => _selectedCategory = 3),
-                        ),
-                      ],
-                    ),
-                  ),
+
                   const SizedBox(height: 24),
 
                   // 高考类型选择
@@ -473,19 +469,19 @@ class _InfoPageState extends State<InfoPage> {
                       children: [
                         Expanded(
                           child: _ToggleButton(
-                            label: '新高考',
-                            subtitle: '3+3选考',
-                            isSelected: _isNewGaokao,
-                            onTap: () => _toggleGaokaoType(true),
+                            label: '旧高考',
+                            subtitle: '文/理综',
+                            isSelected: !_isNewGaokao,
+                            onTap: () => _toggleGaokaoType(false),
                           ),
                         ),
                         const SizedBox(width: 12),
                         Expanded(
                           child: _ToggleButton(
-                            label: '旧高考',
-                            subtitle: '文/理综',
-                            isSelected: !_isNewGaokao,
-                            onTap: () => _toggleGaokaoType(false),
+                            label: '新高考',
+                            subtitle: '3+3选考',
+                            isSelected: _isNewGaokao,
+                            onTap: () => _toggleGaokaoType(true),
                           ),
                         ),
                       ],
@@ -497,52 +493,85 @@ class _InfoPageState extends State<InfoPage> {
                   _FormSection(
                     label: '高考地区',
                     isRequired: true,
-                    child: _FieldDisplay(
-                      value: user.province ?? '未设置',
-                      onTap: () {
-                        _showWarning('切换地区功能开发中');
-                      },
+                    child: Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: const Color(0x0F2C5BF0),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        user.province ?? '未设置',
+                        style: const TextStyle(
+                          fontSize: 15,
+                          color: Color(0xFF424A59),
+                        ),
+                      ),
                     ),
                   ),
                   const SizedBox(height: 18),
 
                   // 所属年级
                   _FormSection(
-                    label: '所属年级',
+                    label: '考试类型',
                     isRequired: true,
-                    child: _FieldDisplay(
-                      value: '高三 (${DateTime.now().year + 1} 年高考)',
-                      onTap: () {
-                        _showWarning('修改年级功能开发中');
-                      },
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _SimpleToggleButton(
+                                label: '高考',
+                                isSelected: _isExamGaokao,
+                                onTap: () => setState(() => _isExamGaokao = true),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: _SimpleToggleButton(
+                                label: '模拟考',
+                                isSelected: !_isExamGaokao,
+                                onTap: () => setState(() => _isExamGaokao = false),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 14),
+                        if (_isExamGaokao)
+                          DropdownButtonFormField<int>(
+                            value: _examYear,
+                            decoration: const InputDecoration(
+                              labelText: '高考年份',
+                              border: OutlineInputBorder(),
+                              isDense: true,
+                            ),
+                            items: [
+                              for (int year = DateTime.now().year; year >= DateTime.now().year - 10; year--)
+                                DropdownMenuItem(value: year, child: Text('$year')),
+                            ],
+                            onChanged: (v) => setState(() => _examYear = v ?? DateTime.now().year),
+                          )
+                        else
+                          TextField(
+                            controller: _mockExamNameController,
+                            decoration: InputDecoration(
+                              labelText: '模拟考名称',
+                              hintText: '例如 xx 第 x 次模拟考',
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 14,
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
                   ),
                   const SizedBox(height: 18),
 
-                  // 成绩类型
-                  _FormSection(
-                    label: '成绩类型',
-                    isRequired: true,
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: _SimpleToggleButton(
-                            label: '本科',
-                            isSelected: _isBachelor,
-                            onTap: () => setState(() => _isBachelor = true),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: _SimpleToggleButton(
-                            label: '专科',
-                            isSelected: !_isBachelor,
-                            onTap: () => setState(() => _isBachelor = false),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
+
                   const SizedBox(height: 18),
 
                   // 毕业高中
@@ -663,7 +692,7 @@ class _InfoPageState extends State<InfoPage> {
                       ),
                     ),
                   ],
-                  const SizedBox(height: 24),
+
 
                   // 成绩输入
                   Text(
@@ -674,64 +703,19 @@ class _InfoPageState extends State<InfoPage> {
                     ),
                   ),
                   const SizedBox(height: 16),
-
-                  // 总分
-                  _FormSection(
-                    label: '总分',
-                    isRequired: true,
-                    child: TextField(
-                      controller: _totalScoreController,
-                      keyboardType: TextInputType.number,
-                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                      decoration: InputDecoration(
-                        hintText: '自动计算或手动输入 (0-750)',
-                        suffixText: '分',
-                        suffixIcon: const Icon(Icons.calculate_outlined, size: 20),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 14,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 18),
-
-                  // 位次
-                  _FormSection(
-                    label: '省排名',
-                    isRequired: true,
-                    child: TextField(
-                      controller: _rankController,
-                      keyboardType: TextInputType.number,
-                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                      decoration: InputDecoration(
-                        hintText: '请输入省内位次',
-                        suffixText: '名',
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 14,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 18),
-
                   // 三大主科成绩
                   Row(
                     children: [
                       Expanded(
                         child: _FormSection(
-                          label: '语文',
-                          child: TextField(
+                            label: '语文',
+                            isRequired: true,
+                            child: TextField(
                             controller: _chineseController,
                             keyboardType: TextInputType.number,
-                            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                            inputFormatters: [
+                              FilteringTextInputFormatter.digitsOnly
+                            ],
                             decoration: InputDecoration(
                               hintText: '0-150',
                               suffixText: '分',
@@ -750,10 +734,13 @@ class _InfoPageState extends State<InfoPage> {
                       Expanded(
                         child: _FormSection(
                           label: '数学',
+                          isRequired: true,
                           child: TextField(
                             controller: _mathController,
                             keyboardType: TextInputType.number,
-                            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                            inputFormatters: [
+                              FilteringTextInputFormatter.digitsOnly
+                            ],
                             decoration: InputDecoration(
                               hintText: '0-150',
                               suffixText: '分',
@@ -772,25 +759,81 @@ class _InfoPageState extends State<InfoPage> {
                   ),
                   const SizedBox(height: 18),
 
-                  _FormSection(
-                    label: '英语',
-                    child: TextField(
-                      controller: _englishController,
-                      keyboardType: TextInputType.number,
-                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                      decoration: InputDecoration(
-                        hintText: '0-150',
-                        suffixText: '分',
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 14,
+                  if (_isNewGaokao)
+                    _FormSection(
+                      label: '英语',
+                      isRequired: true,
+                      child: TextField(
+                        controller: _englishController,
+                        keyboardType: TextInputType.number,
+                        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                        decoration: InputDecoration(
+                          hintText: '0-150',
+                          suffixText: '分',
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 14,
+                          ),
                         ),
                       ),
+                    )
+                  else
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _FormSection(
+                            label: '英语',
+                            isRequired: true,
+                            child: TextField(
+                              controller: _englishController,
+                              keyboardType: TextInputType.number,
+                              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                              decoration: InputDecoration(
+                                hintText: '0-150',
+                                suffixText: '分',
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 14,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: _FormSection(
+                            label: _isScience ? '理综 (物理+化学+生物)' : '文综 (政治+历史+地理)',
+                            isRequired: true,
+                            child: TextField(
+                              controller: _comprehensiveController,
+                              keyboardType: TextInputType.number,
+                              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                              decoration: InputDecoration(
+                                hintText: '0-300',
+                                suffixText: '分',
+                                helperStyle: const TextStyle(
+                                  fontSize: 12,
+                                  color: Color(0xFF7C8698),
+                                ),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 14,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
                   const SizedBox(height: 18),
 
                   // 根据高考类型显示不同的成绩输入
@@ -814,7 +857,9 @@ class _InfoPageState extends State<InfoPage> {
                             child: TextField(
                               controller: _subjectScoreControllers[subject],
                               keyboardType: TextInputType.number,
-                              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                              inputFormatters: [
+                                FilteringTextInputFormatter.digitsOnly
+                              ],
                               decoration: InputDecoration(
                                 hintText: '0-100',
                                 suffixText: '分',
@@ -841,8 +886,8 @@ class _InfoPageState extends State<InfoPage> {
                             width: 1,
                           ),
                         ),
-                        child: Row(
-                          children: const [
+                        child: const Row(
+                          children: [
                             Icon(
                               Icons.info_outline,
                               color: Color(0xFFFF9800),
@@ -863,33 +908,27 @@ class _InfoPageState extends State<InfoPage> {
                       ),
                     ],
                   ] else ...[
-                    // 旧高考：文综/理综（300分）
-                    _FormSection(
-                      label: _isScience ? '理综' : '文综',
-                      isRequired: true,
-                      child: TextField(
-                        controller: _comprehensiveController,
-                        keyboardType: TextInputType.number,
-                        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                        decoration: InputDecoration(
-                          hintText: '0-300',
-                          suffixText: '分',
-                          helperText: _isScience ? '物理+化学+生物' : '政治+历史+地理',
-                          helperStyle: const TextStyle(
-                            fontSize: 12,
-                            color: Color(0xFF7C8698),
-                          ),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 14,
-                          ),
+                  ],
+                  _FormSection(
+                    label: '省排名',
+                    isRequired: true,
+                    child: TextField(
+                      controller: _rankController,
+                      keyboardType: TextInputType.number,
+                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                      decoration: InputDecoration(
+                        hintText: '请输入省内位次',
+                        suffixText: '名',
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 14,
                         ),
                       ),
                     ),
-                  ],
+                  ),
                   const SizedBox(height: 24),
 
                   // 提交和重置按钮
@@ -977,7 +1016,8 @@ class _InfoPageState extends State<InfoPage> {
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
                   itemCount: _localScores.length,
-                  separatorBuilder: (context, index) => const Divider(height: 24),
+                  separatorBuilder: (context, index) =>
+                      const Divider(height: 24),
                   itemBuilder: (context, index) {
                     final score = _localScores[index];
                     return _ScoreRecordCard(
@@ -1052,50 +1092,86 @@ class _ScoreRecordCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF2C5BF0),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Text(
-                  '${score.examYear}年',
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.white,
-                  ),
+              Expanded(
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 6,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF2C5BF0),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: const Text(
+                        '',
+                        style: TextStyle(fontSize: 0),
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF2C5BF0),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        '${score.examYear}年',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: score.examMode?.contains('新高考') == true
+                            ? const Color(0xFFE8F5E9)
+                            : const Color(0xFFFFF3E0),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        score.examMode ?? '-',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: score.examMode?.contains('新高考') == true
+                              ? const Color(0xFF2E7D32)
+                              : const Color(0xFFF57C00),
+                        ),
+                      ),
+                    ),
+                    if (score.mockExamName != null && score.mockExamName!.isNotEmpty)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFE3F2FD),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          '模拟考: ${score.mockExamName}',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF1976D2),
+                          ),
+                        ),
+                      ),
+                    Text(
+                      score.province,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        color: Color(0xFF7C8698),
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      softWrap: false,
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: score.examMode?.contains('新高考') == true
-                      ? const Color(0xFFE8F5E9)
-                      : const Color(0xFFFFF3E0),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Text(
-                  score.examMode ?? '-',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: score.examMode?.contains('新高考') == true
-                        ? const Color(0xFF2E7D32)
-                        : const Color(0xFFF57C00),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                score.province,
-                style: const TextStyle(
-                  fontSize: 13,
-                  color: Color(0xFF7C8698),
-                ),
-              ),
-              const Spacer(),
               IconButton(
                 icon: const Icon(Icons.delete_outline, size: 20),
                 color: const Color(0xFFF04F52),
@@ -1158,7 +1234,7 @@ class _ScoreRecordCard extends StatelessWidget {
               ),
             ],
           ),
-          
+
           // 显示各科成绩
           if (score.scoreDetails != null && score.scoreDetails!.isNotEmpty) ...[
             const SizedBox(height: 12),
@@ -1170,7 +1246,8 @@ class _ScoreRecordCard extends StatelessWidget {
               children: score.scoreDetails!.entries.map((entry) {
                 if (entry.value == null) return const SizedBox.shrink();
                 return Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(8),
@@ -1191,7 +1268,7 @@ class _ScoreRecordCard extends StatelessWidget {
               }).toList(),
             ),
           ],
-          
+
           const SizedBox(height: 12),
           Text(
             '录入时间: ${score.createdAtLabel}',
@@ -1351,11 +1428,16 @@ class _FormSection extends StatelessWidget {
       children: [
         Row(
           children: [
-            Text(
-              label,
-              style: theme.textTheme.titleSmall?.copyWith(
-                fontWeight: FontWeight.w600,
-                color: const Color(0xFF424A59),
+            Expanded(
+              child: Text(
+                label,
+                style: theme.textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: const Color(0xFF424A59),
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                softWrap: false,
               ),
             ),
             if (isRequired)
@@ -1475,7 +1557,7 @@ class _ToggleButton extends StatelessWidget {
                 subtitle!,
                 style: TextStyle(
                   fontSize: 12,
-                  color: isSelected 
+                  color: isSelected
                       ? Colors.white.withOpacity(0.9)
                       : const Color(0xFF7C8698),
                 ),
@@ -1548,9 +1630,8 @@ class _SubjectButton extends StatelessWidget {
           color: isSelected ? const Color(0x1F2C5BF0) : Colors.white,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: isSelected
-                ? const Color(0xFF2C5BF0)
-                : const Color(0xFFD3D9E5),
+            color:
+                isSelected ? const Color(0xFF2C5BF0) : const Color(0xFFD3D9E5),
             width: 2,
           ),
           boxShadow: isSelected
@@ -1568,9 +1649,8 @@ class _SubjectButton extends StatelessWidget {
           style: TextStyle(
             fontSize: 14,
             fontWeight: FontWeight.w600,
-            color: isSelected
-                ? const Color(0xFF2C5BF0)
-                : const Color(0xFF424A59),
+            color:
+                isSelected ? const Color(0xFF2C5BF0) : const Color(0xFF424A59),
           ),
         ),
       ),
@@ -1592,6 +1672,7 @@ class StudentScore {
     this.selectedSubjects,
     this.schoolName,
     this.createdAt,
+    this.mockExamName,
   });
 
   final String? id;
@@ -1606,6 +1687,7 @@ class StudentScore {
   final List<String>? selectedSubjects; // 选考科目
   final String? schoolName;
   final String? createdAt;
+  final String? mockExamName;
 
   factory StudentScore.fromJson(Map<String, dynamic> json) {
     return StudentScore(
@@ -1623,7 +1705,26 @@ class StudentScore {
           .toList(),
       schoolName: json['SCHOOL_NAME']?.toString(),
       createdAt: json['CREATED_AT']?.toString(),
+      mockExamName: json['MOCK_EXAM_NAME']?.toString(),
     );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'ID': id,
+      'EXAM_YEAR': examYear,
+      'TOTAL_SCORE': totalScore,
+      'PROVINCE': province,
+      'RANK_IN_PROVINCE': rankInProvince,
+      'CATEGORY': category,
+      'EXAM_MODE': examMode,
+      'DEGREE_TYPE': degreeType,
+      'SCORE_DETAILS': scoreDetails,
+      'SELECTED_SUBJECTS': selectedSubjects,
+      'SCHOOL_NAME': schoolName,
+      'CREATED_AT': createdAt,
+      'MOCK_EXAM_NAME': mockExamName,
+    };
   }
 
   String get rankLabel =>

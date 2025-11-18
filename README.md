@@ -147,7 +147,7 @@ Authorization: Bearer {token}
 1. **克隆项目**
 ```bash
 git clone https://github.com/nova728/edu_flutter.git
-cd flutter_app
+cd edu_flutter_app
 ```
 
 2. **安装依赖**
@@ -164,7 +164,7 @@ flutter doctor
 
 Web 端:
 ```bash
-flutter run -d chrome
+ flutter run -d chrome --web-port=55136
 ```
 
 iOS 模拟器:

@@ -14,8 +14,8 @@ class HeatPage extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: const [
+          const Row(
+            children: [
               Expanded(
                 child: _HeatStatBlock(
                   title: '热度上涨院校',
@@ -45,11 +45,11 @@ class HeatPage extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 24),
-          SectionCard(
+          const SectionCard(
             title: '热度预警列表',
             subtitle: '关注扎堆风险与潜在机会',
             child: Column(
-              children: const [
+              children: [
                 _HeatRow(
                   school: '复旦大学',
                   major: '教育学',
@@ -103,11 +103,11 @@ class HeatPage extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 20),
-          SectionCard(
+          const SectionCard(
             title: '提醒记录',
             subtitle: '与老师共享同步',
             child: Column(
-              children: const [
+              children: [
                 TimelineItem(
                   timestamp: '10:24',
                   content: '复旦大学热度上涨提醒已推送。',
