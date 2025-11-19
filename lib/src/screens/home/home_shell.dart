@@ -7,6 +7,7 @@ import 'pages/info_page.dart';
 import 'pages/profile_page.dart';
 import 'pages/recommend_page.dart';
 import 'pages/favorite_colleges_page.dart';
+import 'pages/score_ai_analysis_page.dart';
 
 class HomeShell extends StatefulWidget {
   const HomeShell({
@@ -39,7 +40,9 @@ class _HomeShellState extends State<HomeShell> {
         builder: (context) => InfoPage(
           onEditProfile: () => _navigateTo(4),
           onViewPreferences: () => _navigateTo(1),
-          onViewAnalysis: () => _navigateTo(0), // 改为页内跳转到分析区域
+          onViewAnalysis: () => Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const ScoreAiAnalysisPage()),
+          ),
         ),
       ),
       _HomeDestination(
