@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:zygc_flutter_prototype/src/state/auth_scope.dart';
-import 'package:zygc_flutter_prototype/src/services/api_client.dart';
 import 'package:zygc_flutter_prototype/src/models/auth_models.dart';
 
 import 'package:zygc_flutter_prototype/src/widgets/section_card.dart';
@@ -25,8 +24,6 @@ class InfoPage extends StatefulWidget {
 }
 
 class _InfoPageState extends State<InfoPage> {
-  final ApiClient _client = ApiClient();
-  Future<List<StudentScore>>? _scoresFuture;
   late AuthSession _session;
   bool _initialized = false;
   bool _isSubmitting = false;
@@ -106,11 +103,11 @@ class _InfoPageState extends State<InfoPage> {
 
     if (_isNewGaokao) {
       // 新高考：累加选考科目成绩
-      _selectedSubjects.forEach((subject) {
+      for (var subject in _selectedSubjects) {
         final score =
             int.tryParse(_subjectScoreControllers[subject]?.text ?? '') ?? 0;
         total += score;
-      });
+      }
     } else {
       // 旧高考：加上文综/理综成绩
       final comprehensive = int.tryParse(_comprehensiveController.text) ?? 0;
@@ -297,10 +294,10 @@ class _InfoPageState extends State<InfoPage> {
         if (_isNewGaokao) {
           examMode = '新高考(3+3)';
           // 添加选考科目成绩
-          _selectedSubjects.forEach((subject) {
+          for (var subject in _selectedSubjects) {
             scoreDetails[subject] =
                 int.parse(_subjectScoreControllers[subject]?.text ?? '0');
-          });
+          }
         } else {
           examMode = _isScience ? '旧高考(理科)' : '旧高考(文科)';
           scoreDetails[_isScience ? '理综' : '文综'] =
@@ -539,7 +536,7 @@ class _InfoPageState extends State<InfoPage> {
                         const SizedBox(height: 14),
                         if (_isExamGaokao)
                           DropdownButtonFormField<int>(
-                            value: _examYear,
+                            initialValue: _examYear,
                             decoration: const InputDecoration(
                               labelText: '高考年份',
                               border: OutlineInputBorder(),
@@ -874,7 +871,7 @@ class _InfoPageState extends State<InfoPage> {
                             ),
                           ),
                         );
-                      }).toList(),
+                      }),
                     ] else ...[
                       Container(
                         padding: const EdgeInsets.all(16),
@@ -1360,54 +1357,6 @@ class _ActionButton extends StatelessWidget {
   }
 }
 
-class _CategoryTab extends StatelessWidget {
-  const _CategoryTab({
-    required this.label,
-    required this.isSelected,
-    required this.onTap,
-  });
-
-  final String label;
-  final bool isSelected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      child: GestureDetector(
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          decoration: BoxDecoration(
-            color: isSelected ? Colors.white : Colors.transparent,
-            borderRadius: BorderRadius.circular(10),
-            boxShadow: isSelected
-                ? [
-                    BoxShadow(
-                      color: const Color(0xFF2C5BF0).withOpacity(0.08),
-                      blurRadius: 12,
-                      offset: const Offset(0, 4),
-                    ),
-                  ]
-                : null,
-          ),
-          alignment: Alignment.center,
-          child: Text(
-            label,
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              color: isSelected
-                  ? const Color(0xFF2C5BF0)
-                  : const Color(0xFF7C8698),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class _FormSection extends StatelessWidget {
   const _FormSection({
     required this.label,
@@ -1453,53 +1402,6 @@ class _FormSection extends StatelessWidget {
         const SizedBox(height: 10),
         child,
       ],
-    );
-  }
-}
-
-class _FieldDisplay extends StatelessWidget {
-  const _FieldDisplay({
-    this.label,
-    required this.value,
-    required this.onTap,
-  });
-
-  final String? label;
-  final String value;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: const Color(0x0F2C5BF0),
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Row(
-          children: [
-            Expanded(
-              child: Text(
-                label != null ? '$label$value' : value,
-                style: const TextStyle(
-                  fontSize: 15,
-                  color: Color(0xFF424A59),
-                ),
-              ),
-            ),
-            const Text(
-              '修改',
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: Color(0xFF2C5BF0),
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }

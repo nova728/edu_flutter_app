@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import 'package:zygc_flutter_prototype/src/models/auth_models.dart';
 import 'package:zygc_flutter_prototype/src/state/auth_scope.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'profile_edit_page.dart';
@@ -230,10 +229,10 @@ class ProfilePage extends StatelessWidget {
                           final userId = AuthScope.of(context).session.user.userId;
                           final prefs = await SharedPreferences.getInstance();
                           for (final key in [
-                            'favorites_' + userId,
-                            'weights_' + userId,
-                            'scores_' + userId,
-                            'records_' + userId,
+                            'favorites_$userId',
+                            'weights_$userId',
+                            'scores_$userId',
+                            'records_$userId',
                           ]) {
                             await prefs.remove(key);
                           }

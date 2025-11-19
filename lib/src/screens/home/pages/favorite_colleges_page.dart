@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:zygc_flutter_prototype/src/widgets/section_card.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:zygc_flutter_prototype/src/state/auth_scope.dart';
 import 'package:zygc_flutter_prototype/src/widgets/tag_chip.dart';
@@ -67,6 +66,7 @@ class _FavoriteCollegesPageState extends State<FavoriteCollegesPage> {
                 }).toList() ?? const []),
               )));
       });
+      _sortFavorites();
       await _hydrateFavorites();
     } catch (_) {}
   }
@@ -88,6 +88,23 @@ class _FavoriteCollegesPageState extends State<FavoriteCollegesPage> {
             })
         .toList();
     await prefs.setString('favorites_$_userId', jsonEncode(list));
+  }
+
+  void _sortFavorites() {
+    _favorites.sort((a, b) => _orderKey(a).compareTo(_orderKey(b)));
+  }
+
+  int _orderKey(_FavoriteCollege c) {
+    final cat = (c.category ?? '').trim();
+    if (cat == '参考') return 0;
+    if (cat == '冲' || cat == '冲刺') return 1;
+    if (cat == '稳' || cat == '稳妥') return 2;
+    if (cat == '保' || cat == '保底') return 3;
+    final p = c.probability ?? 0.0;
+    if (p >= 0.75) return 3;
+    if (p >= 0.4) return 2;
+    if (p >= 0.2) return 1;
+    return 0;
   }
 
   void _removeFromFavorites(int index) {
@@ -174,6 +191,7 @@ class _FavoriteCollegesPageState extends State<FavoriteCollegesPage> {
       }
     }
     if (changed) {
+      _sortFavorites();
       await _saveFavorites();
       if (mounted) setState(() {});
     }
@@ -475,21 +493,35 @@ class _FavoriteCard extends StatelessWidget {
 
   Color _categoryColor(String? category, double? probability) {
     final c = (category ?? '').trim();
-    if (c == '保底') return const Color(0xFF2C5BF0);
-    if (c == '稳妥') return const Color(0xFF21B573);
-    if (c == '冲刺') return const Color(0xFFF04F52);
+    if (c == '保底' || c == '保') return const Color(0xFF2C5BF0);
+    if (c == '稳妥' || c == '稳') return const Color(0xFF21B573);
+    if (c == '冲刺' || c == '冲') return const Color(0xFFF04F52);
     if (c == '参考') return const Color(0xFF7C8698);
     final p = probability ?? 0.0;
     if (p >= 0.75) return const Color(0xFF2C5BF0);
-    if (p >= 0.5) return const Color(0xFF21B573);
+    if (p >= 0.4) return const Color(0xFF21B573);
     if (p >= 0.2) return const Color(0xFFF04F52);
     return const Color(0xFF7C8698);
+  }
+
+  String _categoryLabel(String? category, double? probability) {
+    final c = (category ?? '').trim();
+    if (c == '保底' || c == '保') return '保';
+    if (c == '稳妥' || c == '稳') return '稳';
+    if (c == '冲刺' || c == '冲') return '冲';
+    if (c == '参考') return '参考';
+    final p = probability ?? 0.0;
+    if (p >= 0.75) return '保';
+    if (p >= 0.4) return '稳';
+    if (p >= 0.2) return '冲';
+    return '参考';
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final categoryColor = _categoryColor(favorite.category, favorite.probability);
+    final categoryLabel = _categoryLabel(favorite.category, favorite.probability);
 
     return Material(
       color: Colors.white,
@@ -610,8 +642,7 @@ class _FavoriteCard extends StatelessWidget {
               spacing: 8,
               runSpacing: 6,
               children: [
-                if ((favorite.category ?? '').isNotEmpty)
-                  TagChip(label: favorite.category!, color: categoryColor),
+                TagChip(label: categoryLabel, color: categoryColor),
                 ...favorite.tags.map((tag) => TagChip(label: tag)),
               ],
             ),

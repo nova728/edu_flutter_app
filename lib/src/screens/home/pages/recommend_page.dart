@@ -111,7 +111,9 @@ class RecommendPageState extends State<RecommendPage> with SingleTickerProviderS
   void _previewSum(String changed, double value) {
     double a = _regionWeight, b = _tierWeight, c = _majorWeight;
     double v = value.clamp(0.1, 0.7);
-    if (changed == 'region') a = v; else if (changed == 'tier') b = v; else c = v;
+    if (changed == 'region') {
+      a = v;
+    } else if (changed == 'tier') b = v; else c = v;
     setState(() { _sumPreview = a + b + c; });
   }
   
@@ -283,9 +285,7 @@ class RecommendPageState extends State<RecommendPage> with SingleTickerProviderS
 
   /// 显示院校详情弹窗（真实数据）
   Future<void> _showCollegeDetail(String collegeName, String collegeCode) async {
-    final scope = AuthScope.of(context);
     final client = ApiClient();
-    final token = scope.session.token;
     Map<String, dynamic> data = {};
     try {
       final resp = await client.get('/colleges/$collegeCode');
@@ -594,7 +594,7 @@ class RecommendPageState extends State<RecommendPage> with SingleTickerProviderS
       } else {
         debugPrint('recommend no local scores for user=$_userId');
       }
-      debugPrint('recommend query: ' + query.entries.map((e) => '${e.key}=${e.value}').join('&'));
+      debugPrint('recommend query: ${query.entries.map((e) => '${e.key}=${e.value}').join('&')}');
       final resp = await _client.get('/colleges/recommend', query: query);
       final rows = resp['data'] as List? ?? const [];
       if (!mounted) return;
@@ -810,8 +810,6 @@ class RecommendPageState extends State<RecommendPage> with SingleTickerProviderS
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
 
     return Stack(
       children: [
@@ -1288,7 +1286,7 @@ class RecommendPageState extends State<RecommendPage> with SingleTickerProviderS
                             child: _CollegeCard(
                               name: name,
                               code: code,
-                              location: '$province',
+                              location: province,
                               matchScore: matchPct,
                               probability: prob,
                               categoryLabel: categoryLabel,
@@ -1628,7 +1626,6 @@ class _CollegeCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
 
     return Container(
       decoration: BoxDecoration(

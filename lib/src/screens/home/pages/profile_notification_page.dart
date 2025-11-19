@@ -12,7 +12,6 @@ class _ProfileNotificationPageState extends State<ProfileNotificationPage> {
   bool _heatAlert = true;
 
   bool _recommendChange = true;
-  bool _collaboratorComment = false;
   bool _systemMessage = true;
 
   @override

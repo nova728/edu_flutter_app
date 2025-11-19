@@ -3,7 +3,6 @@ import 'package:zygc_flutter_prototype/src/models/auth_models.dart';
 import 'package:zygc_flutter_prototype/src/widgets/section_card.dart';
 import 'package:zygc_flutter_prototype/src/state/auth_scope.dart';
 import 'package:zygc_flutter_prototype/src/services/api_client.dart';
-import 'package:flutter/foundation.dart';
 
 class ProfileEditPage extends StatefulWidget {
   const ProfileEditPage({required this.user, super.key});
@@ -45,7 +44,6 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
 
     return Scaffold(
       backgroundColor: const Color(0xFFEFF3FF),

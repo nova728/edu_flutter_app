@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:zygc_flutter_prototype/src/state/auth_scope.dart';
 import 'package:zygc_flutter_prototype/src/services/api_client.dart';
 import 'package:zygc_flutter_prototype/src/widgets/section_card.dart';
-import 'favorite_colleges_page.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 
@@ -16,7 +15,7 @@ class CollegePage extends StatefulWidget {
 
 class _CollegePageState extends State<CollegePage> with SingleTickerProviderStateMixin {
   late TabController _tabController;
-
+  
   @override
   void initState() {
     super.initState();
@@ -81,7 +80,7 @@ class _CollegeLibraryTabState extends State<_CollegeLibraryTab> {
   final TextEditingController _searchController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   
-  List<CollegeSummary> _colleges = [];
+  final List<CollegeSummary> _colleges = [];
   bool _isLoading = false;
   bool _hasMore = true;
   int _currentPage = 0;
@@ -284,56 +283,6 @@ class _CollegeLibraryTabState extends State<_CollegeLibraryTab> {
     }
   }
 
-  Future<void> _toggleFavorite(int collegeId, String collegeName) async {
-    setState(() {
-      if (_favoriteCollegeIds.contains(collegeId)) {
-        _favoriteCollegeIds.remove(collegeId);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('已取消收藏 $collegeName'), duration: const Duration(seconds: 2)),
-        );
-      } else {
-        _favoriteCollegeIds.add(collegeId);
-        final messenger = ScaffoldMessenger.maybeOf(context);
-        messenger?.clearSnackBars();
-        messenger?.showSnackBar(
-          SnackBar(
-            content: Text('已收藏 $collegeName'),
-            duration: const Duration(seconds: 2),
-            action: SnackBarAction(
-              label: '查看',
-              onPressed: () {
-                messenger?.hideCurrentSnackBar();
-                if (!mounted) return;
-                Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const FavoriteCollegesPage()),
-                );
-              },
-            ),
-          ),
-        );
-      }
-    });
-    final scope = AuthScope.of(context);
-    final key = 'favorites_${scope.session.user.userId}';
-    final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(key);
-    final list = raw == null || raw.isEmpty ? <dynamic>[] : (jsonDecode(raw) as List);
-    if (_favoriteCollegeIds.contains(collegeId)) {
-      if (!list.any((e) => (e['name'] ?? '') == collegeName)) {
-        list.insert(0, {
-          'name': collegeName,
-          'location': '',
-          'tags': [],
-          'addedDate': DateTime.now().toString(),
-          'notes': '',
-        });
-      }
-    } else {
-      list.removeWhere((e) => (e['name'] ?? '') == collegeName);
-    }
-    await prefs.setString(key, jsonEncode(list));
-  }
-
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -403,7 +352,7 @@ class _CollegeLibraryTabState extends State<_CollegeLibraryTab> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       DropdownButtonFormField<String?>(
-                        value: _selectedProvince,
+                        initialValue: _selectedProvince,
                         isExpanded: true,
                         items: [
                           const DropdownMenuItem<String?>(
@@ -983,7 +932,9 @@ class _CollegeDetailSheetState extends State<_CollegeDetailSheet>
   String? _selectedProvince;
   int? _selectedYear;
   bool _provinceInitialized = false;
-  bool _isFavorite = false;
+  List<PlanItem>? _planItems;
+  bool _isLoadingPlans = false;
+  int? _selectedPlanYear;
   String _normalizeProvinceShort(String input) {
     var result = input.trim();
     const suffixes = [
@@ -1012,10 +963,12 @@ class _CollegeDetailSheetState extends State<_CollegeDetailSheet>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
     _tabController.addListener(() {
       if (_tabController.index == 1 && _admissionRecords == null) {
         _loadAdmissionRecords();
+      } else if (_tabController.index == 2 && _planItems == null) {
+        _loadPlans();
       }
     });
   }
@@ -1024,62 +977,6 @@ class _CollegeDetailSheetState extends State<_CollegeDetailSheet>
   void dispose() {
     _tabController.dispose();
     super.dispose();
-  }
-
-  Future<void> _loadFavoriteState() async {
-    final scope = AuthScope.of(context);
-    final key = 'favorites_${scope.session.user.userId}';
-    final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(key);
-    if (raw == null || raw.isEmpty) {
-      if (!mounted) return;
-      setState(() { _isFavorite = false; });
-      return;
-    }
-    try {
-      final list = (jsonDecode(raw) as List).cast<Map<String, dynamic>>();
-      final name = widget.summary.collegeName;
-      final exists = list.any((e) => (e['name'] ?? '') == name);
-      if (!mounted) return;
-      setState(() { _isFavorite = exists; });
-    } catch (_) {
-      if (!mounted) return;
-      setState(() { _isFavorite = false; });
-    }
-  }
-
-  Future<void> _toggleFavoriteInDetail() async {
-    final scope = AuthScope.of(context);
-    final key = 'favorites_${scope.session.user.userId}';
-    final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(key);
-    final name = widget.summary.collegeName;
-    final list = raw == null || raw.isEmpty ? <dynamic>[] : (jsonDecode(raw) as List);
-    if (_isFavorite) {
-      list.removeWhere((e) => (e['name'] ?? '') == name);
-      await prefs.setString(key, jsonEncode(list));
-      if (mounted) {
-        setState(() { _isFavorite = false; });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('已取消收藏 $name')),
-        );
-      }
-    } else {
-      list.insert(0, {
-        'name': name,
-        'location': widget.detailData['PROVINCE']?.toString() ?? '',
-        'tags': [],
-        'addedDate': DateTime.now().toString(),
-        'notes': '',
-      });
-      await prefs.setString(key, jsonEncode(list));
-      if (mounted) {
-        setState(() { _isFavorite = true; });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('已收藏 $name')),
-        );
-      }
-    }
   }
 
   Future<void> _loadAdmissionRecords() async {
@@ -1127,6 +1024,25 @@ class _CollegeDetailSheetState extends State<_CollegeDetailSheet>
     }
   }
 
+  Future<void> _loadPlans() async {
+    setState(() { _isLoadingPlans = true; });
+    try {
+      final query = <String, String>{ 'collegeCode': widget.summary.collegeCode.toString() };
+      if (_selectedPlanYear != null) query['year'] = _selectedPlanYear.toString();
+      final resp = await widget.client.get('/plans', query: query);
+      final rows = (resp['data'] as List?) ?? const [];
+      setState(() {
+        _planItems = rows.map((e) => PlanItem.fromJson(e as Map<String, dynamic>)).toList();
+        _isLoadingPlans = false;
+      });
+    } catch (e) {
+      setState(() { _isLoadingPlans = false; });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('加载招生计划失败: $e')));
+      }
+    }
+  }
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -1144,7 +1060,6 @@ class _CollegeDetailSheetState extends State<_CollegeDetailSheet>
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
 
     return DraggableScrollableSheet(
       initialChildSize: 0.85,
@@ -1227,6 +1142,7 @@ class _CollegeDetailSheetState extends State<_CollegeDetailSheet>
                 tabs: const [
                   Tab(text: '院校信息'),
                   Tab(text: '历年录取'),
+                  Tab(text: '招生计划'),
                 ],
               ),
             ),
@@ -1236,7 +1152,6 @@ class _CollegeDetailSheetState extends State<_CollegeDetailSheet>
               child: TabBarView(
                 controller: _tabController,
                 children: [
-                  // 院校信息标签页
                   ListView(
                     controller: scrollController,
                     padding: const EdgeInsets.all(24),
@@ -1269,10 +1184,8 @@ class _CollegeDetailSheetState extends State<_CollegeDetailSheet>
                     ],
                   ),
 
-                  // 历年录取标签页
                   Column(
                     children: [
-                      // 筛选条件
                       Container(
                         padding: const EdgeInsets.all(16),
                         decoration: const BoxDecoration(
@@ -1297,7 +1210,7 @@ class _CollegeDetailSheetState extends State<_CollegeDetailSheet>
                               children: [
                                 Expanded(
                                   child: DropdownButtonFormField<String?>(
-                                    value: _selectedProvince,
+                                    initialValue: _selectedProvince,
                                     decoration: const InputDecoration(
                                       labelText: '省份',
                                       isDense: true,
@@ -1329,7 +1242,7 @@ class _CollegeDetailSheetState extends State<_CollegeDetailSheet>
                                 const SizedBox(width: 12),
                                 Expanded(
                                   child: DropdownButtonFormField<int?>(
-                                    value: _selectedYear,
+                                    initialValue: _selectedYear,
                                     decoration: const InputDecoration(
                                       labelText: '年份',
                                       isDense: true,
@@ -1365,7 +1278,6 @@ class _CollegeDetailSheetState extends State<_CollegeDetailSheet>
                         ),
                       ),
 
-                      // 录取数据列表
                       Expanded(
                         child: _isLoadingAdmissions
                             ? const Center(child: CircularProgressIndicator())
@@ -1406,6 +1318,93 @@ class _CollegeDetailSheetState extends State<_CollegeDetailSheet>
                                           );
                                         },
                                       ),
+                      ),
+                    ],
+                  ),
+
+                  Column(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: const BoxDecoration(
+                          color: Color(0xFFF5F7FB),
+                          border: Border(
+                            bottom: BorderSide(color: Color(0xFFE8ECF4)),
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: DropdownButtonFormField<int?>(
+                                initialValue: _selectedPlanYear,
+                                decoration: const InputDecoration(
+                                  labelText: '年份',
+                                  isDense: true,
+                                  contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                ),
+                                items: [
+                                  const DropdownMenuItem(value: null, child: Text('全部')),
+                                  for (int year = DateTime.now().year; year >= 2017; year--)
+                                    DropdownMenuItem(value: year, child: Text(year.toString())),
+                                ],
+                                onChanged: (value) {
+                                  setState(() { _selectedPlanYear = value; });
+                                  _loadPlans();
+                                },
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Expanded(
+                        child: _isLoadingPlans
+                            ? const Center(child: CircularProgressIndicator())
+                            : (_planItems == null
+                                ? const Center(child: Text('加载中...'))
+                                : _planItems!.isEmpty
+                                    ? Center(
+                                        child: Column(
+                                          mainAxisAlignment: MainAxisAlignment.center,
+                                          children: [
+                                            Icon(Icons.inbox_outlined, size: 64, color: Colors.grey.shade400),
+                                            const SizedBox(height: 16),
+                                            Text('暂无招生计划', style: TextStyle(color: Colors.grey.shade600)),
+                                          ],
+                                        ),
+                                      )
+                                    : ListView.builder(
+                                        controller: scrollController,
+                                        padding: const EdgeInsets.all(16),
+                                        itemCount: _planItems!.length,
+                                        itemBuilder: (context, index) {
+                                          final item = _planItems![index];
+                                          return Container(
+                                            margin: const EdgeInsets.only(bottom: 12),
+                                            padding: const EdgeInsets.all(16),
+                                            decoration: BoxDecoration(
+                                              color: const Color(0xFFF5F7FB),
+                                              borderRadius: BorderRadius.circular(16),
+                                              border: const Border.fromBorderSide(BorderSide(color: Color(0xFFE8ECF4))),
+                                            ),
+                                            child: Column(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              children: [
+                                                Text(item.majorName, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF1A1F2E))),
+                                                const SizedBox(height: 8),
+                                                Row(children: [
+                                                  Expanded(child: _InfoItem(icon: Icons.calendar_today, label: '年份', value: item.admissionYear.toString())),
+                                                  Expanded(child: _InfoItem(icon: Icons.location_on, label: '省份', value: item.province)),
+                                                ]),
+                                                const SizedBox(height: 8),
+                                                Row(children: [
+                                                  Expanded(child: _InfoItem(icon: Icons.people_alt, label: '计划人数', value: item.planCountLabel, valueColor: const Color(0xFF2C5BF0))),
+                                                  Expanded(child: _InfoItem(icon: Icons.description, label: '说明', value: item.description ?? '-')),
+                                                ]),
+                                              ],
+                                            ),
+                                          );
+                                        },
+                                      ))
                       ),
                     ],
                   ),
@@ -1601,4 +1600,38 @@ class AdmissionRecord {
       minRank: json['MIN_RANK'] as int? ?? 0,
     );
   }
+}
+
+class PlanItem {
+  const PlanItem({
+    required this.planId,
+    required this.collegeCode,
+    required this.majorName,
+    required this.province,
+    required this.admissionYear,
+    this.planCount,
+    this.description,
+  });
+
+  final int planId;
+  final int collegeCode;
+  final String majorName;
+  final String province;
+  final int admissionYear;
+  final int? planCount;
+  final String? description;
+
+  factory PlanItem.fromJson(Map<String, dynamic> json) {
+    return PlanItem(
+      planId: int.tryParse(json['PLAN_ID']?.toString() ?? '') ?? 0,
+      collegeCode: int.tryParse(json['COLLEGE_CODE']?.toString() ?? '') ?? 0,
+      majorName: json['MAJOR_NAME']?.toString() ?? '-',
+      province: json['PROVINCE']?.toString() ?? '-',
+      admissionYear: int.tryParse(json['ADMISSION_YEAR']?.toString() ?? '') ?? 0,
+      planCount: int.tryParse(json['PLAN_COUNT']?.toString() ?? ''),
+      description: json['DESCRIPTION']?.toString(),
+    );
+  }
+
+  String get planCountLabel => planCount?.toString() ?? '-';
 }

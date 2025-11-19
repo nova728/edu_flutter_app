@@ -262,10 +262,10 @@ class _AuthScreenState extends State<AuthScreen> {
                           ),
                           onPressed: widget.isLoading ? null : () => _onSubmit(),
                           child: widget.isLoading
-                              ? Row(
+                              ? const Row(
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   mainAxisSize: MainAxisSize.min,
-                                  children: const [
+                                  children: [
                                     SizedBox(
                                       width: 18,
                                       height: 18,
@@ -471,7 +471,7 @@ class _RegisterForm extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           DropdownButtonFormField<String>(
-            value: selectedProvince,
+            initialValue: selectedProvince,
             isExpanded: true,
             validator: (value) => value == null || value.isEmpty ? '请选择所在省份' : null,
             onChanged: onProvinceChanged,
