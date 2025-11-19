@@ -127,6 +127,12 @@ class RecommendPageState extends State<RecommendPage> with SingleTickerProviderS
   final Set<String> _prefRegions = {};
   bool _pref985 = false, _pref211 = false, _prefDFC = false;
   bool _applyMajorPrefForBackend = false;
+  static const List<String> _allProvinces = [
+    '北京市','天津市','河北省','山西省','内蒙古自治区','辽宁省','吉林省','黑龙江省','上海市','江苏省',
+    '浙江省','安徽省','福建省','江西省','山东省','河南省','湖北省','湖南省','广东省','广西壮族自治区',
+    '海南省','重庆市','四川省','贵州省','云南省','西藏自治区','陕西省','甘肃省','青海省','宁夏回族自治区',
+    '新疆维吾尔自治区','香港特别行政区','澳门特别行政区','台湾省'
+  ];
   
   // 收藏和草案
   final Set<String> _favoriteColleges = {};
@@ -519,6 +525,106 @@ class RecommendPageState extends State<RecommendPage> with SingleTickerProviderS
         _prefRegions.add(region);
       }
     });
+  }
+
+  Future<void> _showProvincePicker() async {
+    final initial = Set<String>.from(_prefRegions);
+    final result = await showModalBottomSheet<Set<String>>(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            final selections = Set<String>.from(initial);
+            void toggle(String province) {
+              setModalState(() {
+                if (initial.contains(province)) {
+                  initial.remove(province);
+                } else {
+                  initial.add(province);
+                }
+              });
+            }
+
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(context).viewInsets.bottom,
+              ),
+              child: SafeArea(
+                child: SizedBox(
+                  height: MediaQuery.of(context).size.height * 0.7,
+                  child: Column(
+                    children: [
+                      const SizedBox(height: 12),
+                      Container(
+                        width: 40,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFD3D9E5),
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        child: Row(
+                          children: [
+                            const Expanded(
+                              child: Text(
+                                '选择偏好省份',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                            if (initial.isNotEmpty)
+                              TextButton(
+                                onPressed: () => setModalState(() => initial.clear()),
+                                child: const Text('清空'),
+                              ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Expanded(
+                        child: ListView.builder(
+                          padding: const EdgeInsets.symmetric(horizontal: 20),
+                          itemCount: _allProvinces.length,
+                          itemBuilder: (context, index) {
+                            final province = _allProvinces[index];
+                            return CheckboxListTile(
+                              value: initial.contains(province),
+                              title: Text(province),
+                              dense: true,
+                              onChanged: (_) => toggle(province),
+                            );
+                          },
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+                        child: FilledButton(
+                          onPressed: () => Navigator.of(context).pop(initial),
+                          child: Text(initial.isEmpty ? '不设置省份' : '确定 (${initial.length})'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+    if (result != null && mounted) {
+      setState(() {
+        _prefRegions
+          ..clear()
+          ..addAll(result);
+      });
+    }
   }
 
   Future<void> _loadRecommendations() async {
@@ -1073,48 +1179,92 @@ class RecommendPageState extends State<RecommendPage> with SingleTickerProviderS
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [
-                          for (final r in ['上海','江苏','浙江','安徽'])
-                            FilterChip(
-                              label: Text(r),
-                              selected: _prefRegions.contains(r),
-                              onSelected: (_) => _togglePrefRegion(r),
-                            ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
                       Row(
                         children: [
                           Expanded(
-                            child: SwitchListTile(
-                              title: const Text('偏好 985'),
-                              value: _pref985,
-                              onChanged: (v) => setState(() => _pref985 = v),
-                              contentPadding: EdgeInsets.zero,
+                            child: OutlinedButton.icon(
+                              onPressed: _showProvincePicker,
+                              icon: const Icon(Icons.public_rounded),
+                              label: const Text('选择偏好省份'),
                             ),
                           ),
-                          Expanded(
-                            child: SwitchListTile(
-                              title: const Text('偏好 211'),
-                              value: _pref211,
-                              onChanged: (v) => setState(() => _pref211 = v),
-                              contentPadding: EdgeInsets.zero,
+                          if (_prefRegions.isNotEmpty) ...[
+                            const SizedBox(width: 12),
+                            IconButton.filledTonal(
+                              onPressed: () => setState(() => _prefRegions.clear()),
+                              icon: const Icon(Icons.clear_rounded),
+                              tooltip: '清空省份',
                             ),
-                          ),
-                          Expanded(
-                            child: SwitchListTile(
-                              title: const Text('偏好 双一流'),
-                              value: _prefDFC,
-                              onChanged: (v) => setState(() => _prefDFC = v),
-                              contentPadding: EdgeInsets.zero,
-                            ),
-                          ),
+                          ],
                         ],
                       ),
                       const SizedBox(height: 12),
+                      _prefRegions.isEmpty
+                          ? const Text(
+                              '暂未选择省份，默认全国范围参与匹配。',
+                              style: TextStyle(color: Color(0xFF7C8698)),
+                            )
+                          : Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: _prefRegions.map((province) {
+                                return InputChip(
+                                  label: Text(province),
+                                  onDeleted: () => _togglePrefRegion(province),
+                                );
+                              }).toList(),
+                            ),
+                      const SizedBox(height: 16),
+                      LayoutBuilder(
+                        builder: (context, constraints) {
+                          final tileWidth = constraints.maxWidth > 520
+                              ? (constraints.maxWidth - 12) / 2
+                              : constraints.maxWidth;
+                          return Wrap(
+                            spacing: 12,
+                            runSpacing: 12,
+                            children: [
+                              SizedBox(
+                                width: tileWidth,
+                                child: SwitchListTile.adaptive(
+                                  value: _pref985,
+                                  onChanged: (v) => setState(() => _pref985 = v),
+                                  title: const Text('偏好 985'),
+                                  contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                                  tileColor: const Color(0xFFF5F7FB),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                  visualDensity: VisualDensity.compact,
+                                ),
+                              ),
+                              SizedBox(
+                                width: tileWidth,
+                                child: SwitchListTile.adaptive(
+                                  value: _pref211,
+                                  onChanged: (v) => setState(() => _pref211 = v),
+                                  title: const Text('偏好 211'),
+                                  contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                                  tileColor: const Color(0xFFF5F7FB),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                  visualDensity: VisualDensity.compact,
+                                ),
+                              ),
+                              SizedBox(
+                                width: tileWidth,
+                                child: SwitchListTile.adaptive(
+                                  value: _prefDFC,
+                                  onChanged: (v) => setState(() => _prefDFC = v),
+                                  title: const Text('偏好 双一流'),
+                                  contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                                  tileColor: const Color(0xFFF5F7FB),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                  visualDensity: VisualDensity.compact,
+                                ),
+                              ),
+                            ],
+                          );
+                        },
+                      ),
+                      const SizedBox(height: 16),
                       TextField(
                         controller: _prefMajorController,
                         decoration: InputDecoration(
