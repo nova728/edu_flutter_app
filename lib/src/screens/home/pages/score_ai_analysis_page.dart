@@ -22,6 +22,7 @@ class _ScoreAiAnalysisPageState extends State<ScoreAiAnalysisPage> {
   String? _analysis;
   String? _error;
   List<_ScoreSnapshot> _snapshots = [];
+  DateTime? _analysisUpdatedAt;
 
   @override
   void didChangeDependencies() {
@@ -42,10 +43,22 @@ class _ScoreAiAnalysisPageState extends State<ScoreAiAnalysisPage> {
     final prefs = await SharedPreferences.getInstance();
     final key = prefs.getString(_apiKeyStorageKey(scope.session.user.userId));
     final rawScores = prefs.getString('scores_${scope.session.user.userId}');
+    final saved = prefs.getString(_analysisStorageKey(scope.session.user.userId));
     if (!mounted) return;
     setState(() {
       if (key != null) _apiKeyController.text = key;
       _snapshots = _ScoreSnapshot.parse(rawScores);
+      if (saved != null && saved.isNotEmpty) {
+        try {
+          final data = jsonDecode(saved) as Map<String, dynamic>;
+          final content = data['content']?.toString();
+          final ts = data['updatedAt']?.toString();
+          if (content != null && content.isNotEmpty) {
+            _analysis = content;
+            _analysisUpdatedAt = ts != null ? DateTime.tryParse(ts) : null;
+          }
+        } catch (_) {}
+      }
     });
   }
 
@@ -115,9 +128,14 @@ class _ScoreAiAnalysisPageState extends State<ScoreAiAnalysisPage> {
       if (response.statusCode >= 200 && response.statusCode < 300) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
         final content = data['choices']?[0]?['message']?['content']?.toString();
+        final now = DateTime.now();
         setState(() {
           _analysis = content?.trim().isNotEmpty == true ? content!.trim() : '未获取到有效回复';
+          _analysisUpdatedAt = _analysis != null ? now : null;
         });
+        if (_analysis != null) {
+          await _persistAnalysis(_analysis!, now);
+        }
       } else {
         setState(() {
           _analysis = null;
@@ -158,6 +176,17 @@ class _ScoreAiAnalysisPageState extends State<ScoreAiAnalysisPage> {
   }
 
   String _apiKeyStorageKey(String userId) => 'deepseek_api_key_$userId';
+  String _analysisStorageKey(String userId) => 'deepseek_analysis_$userId';
+
+  Future<void> _persistAnalysis(String content, DateTime timestamp) async {
+    final scope = AuthScope.of(context);
+    final prefs = await SharedPreferences.getInstance();
+    final payload = jsonEncode({
+      'content': content,
+      'updatedAt': timestamp.toIso8601String(),
+    });
+    await prefs.setString(_analysisStorageKey(scope.session.user.userId), payload);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -265,6 +294,14 @@ class _ScoreAiAnalysisPageState extends State<ScoreAiAnalysisPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  if (_analysisUpdatedAt != null)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Text(
+                        '最近生成：${_analysisUpdatedAt!.toLocal().toString().split(".").first}',
+                        style: const TextStyle(fontSize: 12, color: Color(0xFF7C8698)),
+                      ),
+                    ),
                   FilledButton.icon(
                     onPressed: _isLoading ? null : _runAnalysis,
                     icon: _isLoading
