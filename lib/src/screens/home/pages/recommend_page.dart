@@ -914,6 +914,58 @@ class RecommendPageState extends State<RecommendPage> with SingleTickerProviderS
     });
   }
 
+  List<_ProvinceStat> _topProvinceStats(List<Map<String, dynamic>> list, {int limit = 3}) {
+    final counter = <String, int>{};
+    for (final rec in list) {
+      final prov = (rec['PROVINCE']?.toString() ?? '').trim();
+      if (prov.isEmpty) continue;
+      counter.update(prov, (value) => value + 1, ifAbsent: () => 1);
+    }
+    final entries = counter.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    return entries.take(limit).map((e) => _ProvinceStat(name: e.key, count: e.value)).toList();
+  }
+
+  _RecommendationStats _buildRecommendationStats() {
+    if (_recommendations.isEmpty) return const _RecommendationStats.empty();
+    final categories = {
+      '保底': 0,
+      '稳妥': 0,
+      '冲刺': 0,
+      '参考': 0,
+    };
+    double probabilitySum = 0;
+    for (final rec in _recommendations) {
+      final prob = (rec['probability'] as num?)?.toDouble() ?? 0.0;
+      probabilitySum += prob;
+      final cat = _categoryFromProb(prob);
+      switch (cat) {
+        case '保':
+        case '保底':
+          categories['保底'] = (categories['保底'] ?? 0) + 1;
+          break;
+        case '稳':
+        case '稳妥':
+          categories['稳妥'] = (categories['稳妥'] ?? 0) + 1;
+          break;
+        case '冲':
+        case '冲刺':
+          categories['冲刺'] = (categories['冲刺'] ?? 0) + 1;
+          break;
+        default:
+          categories['参考'] = (categories['参考'] ?? 0) + 1;
+      }
+    }
+    final avgProbability = probabilitySum / _recommendations.length;
+    final provinces = _topProvinceStats(_recommendations);
+    return _RecommendationStats(
+      total: _recommendations.length,
+      categoryCounts: categories,
+      averageProbability: avgProbability,
+      topProvinces: provinces,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
 
@@ -1301,6 +1353,17 @@ class RecommendPageState extends State<RecommendPage> with SingleTickerProviderS
                     ],
                   ),
                 ),
+
+                const SizedBox(height: 24),
+                if (_recommendations.isNotEmpty)
+                  SectionCard(
+                    title: '推荐洞察',
+                    subtitle: '院校类别与地域分布速览',
+                    child: _RecommendationVisualization(
+                      stats: _buildRecommendationStats(),
+                      recommendations: _recommendations,
+                    ),
+                  ),
 
                 const SizedBox(height: 24),
 
@@ -2087,6 +2150,7 @@ class _DetailSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -2157,6 +2221,261 @@ class _DetailItem extends StatelessWidget {
               ),
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RecommendationStats {
+  const _RecommendationStats({
+    required this.total,
+    required this.categoryCounts,
+    required this.averageProbability,
+    required this.topProvinces,
+  });
+
+  const _RecommendationStats.empty()
+      : total = 0,
+        categoryCounts = const {'保底': 0, '稳妥': 0, '冲刺': 0, '参考': 0},
+        averageProbability = 0,
+        topProvinces = const [];
+
+  final int total;
+  final Map<String, int> categoryCounts;
+  final double averageProbability;
+  final List<_ProvinceStat> topProvinces;
+}
+
+class _ProvinceStat {
+  const _ProvinceStat({required this.name, required this.count});
+
+  final String name;
+  final int count;
+}
+
+class _VisualizationHeader extends StatelessWidget {
+  const _VisualizationHeader({
+    required this.averageProbability,
+    required this.total,
+  });
+
+  final double averageProbability;
+  final int total;
+
+  @override
+  Widget build(BuildContext context) {
+    final avg = (averageProbability * 100).clamp(0, 100).toStringAsFixed(0);
+    return Row(
+      children: [
+        Expanded(
+          child: _HeaderMetric(
+            icon: Icons.auto_graph_rounded,
+            label: '平均录取概率',
+            value: '$avg%',
+            color: const Color(0xFF2C5BF0),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: _HeaderMetric(
+            icon: Icons.school_rounded,
+            label: '推荐院校总数',
+            value: '$total',
+            color: const Color(0xFF21B573),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _HeaderMetric extends StatelessWidget {
+  const _HeaderMetric({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: color.withOpacity(0.18)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.15),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(icon, color: color, size: 20),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodySmall?.copyWith(color: color.withOpacity(0.8)),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  value,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: color,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CategoryBar extends StatelessWidget {
+  const _CategoryBar({
+    required this.label,
+    required this.count,
+    required this.ratio,
+  });
+
+  final String label;
+  final int count;
+  final double ratio;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final percent = (ratio * 100).toStringAsFixed(0);
+    final color = switch (label) {
+      '保底' => const Color(0xFF2C5BF0),
+      '稳妥' => const Color(0xFF21B573),
+      '冲刺' => const Color(0xFFF04F52),
+      _ => const Color(0xFF7C8698),
+    };
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text(label, style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
+            const Spacer(),
+            Text('$count 所 · $percent%', style: theme.textTheme.bodySmall?.copyWith(color: const Color(0xFF7C8698))),
+          ],
+        ),
+        const SizedBox(height: 6),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: LinearProgressIndicator(
+            value: ratio.clamp(0, 1),
+            minHeight: 10,
+            backgroundColor: const Color(0xFFE8ECF4),
+            valueColor: AlwaysStoppedAnimation<Color>(color),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _RecommendationVisualization extends StatelessWidget {
+  const _RecommendationVisualization({
+    required this.stats,
+    required this.recommendations,
+  });
+
+  final _RecommendationStats stats;
+  final List<Map<String, dynamic>> recommendations;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _VisualizationHeader(
+          averageProbability: stats.averageProbability,
+          total: stats.total,
+        ),
+        const SizedBox(height: 16),
+        Column(
+          children: stats.categoryCounts.entries.map((entry) {
+            final ratio = stats.total == 0 ? 0.0 : entry.value / stats.total;
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: _CategoryBar(
+                label: entry.key,
+                count: entry.value,
+                ratio: ratio,
+              ),
+            );
+          }).toList(),
+        ),
+        const SizedBox(height: 12),
+        const Divider(),
+        const SizedBox(height: 12),
+        const Text(
+          '热门省份',
+          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF424A59)),
+        ),
+        const SizedBox(height: 8),
+        if (stats.topProvinces.isEmpty)
+          const Text('暂无省份统计数据。', style: TextStyle(color: Color(0xFF7C8698)))
+        else
+          Column(
+            children: stats.topProvinces
+                .map((p) => Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: _ProvinceTile(stat: p, total: stats.total),
+                    ))
+                .toList(),
+          ),
+      ],
+    );
+  }
+}
+
+class _ProvinceTile extends StatelessWidget {
+  const _ProvinceTile({required this.stat, required this.total});
+
+  final _ProvinceStat stat;
+  final int total;
+
+  @override
+  Widget build(BuildContext context) {
+    final ratio = total == 0 ? 0.0 : stat.count / total;
+    final percent = (ratio * 100).toStringAsFixed(0);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF5F7FB),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(
+        children: [
+          Text(stat.name, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF424A59))),
+          const Spacer(),
+          Text('${stat.count} 所 · $percent%', style: const TextStyle(fontSize: 12, color: Color(0xFF7C8698))),
         ],
       ),
     );
